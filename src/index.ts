@@ -1,5 +1,5 @@
 import { App, Plugin, nextTick } from "vue";
-import { Data, MessageData } from "./interfaces";
+import { Data, MessageData } from "./interfaces.d";
 import { EVENT_OPEN, EVENT_MESSAGE, EVENT_CLOSE, EVENT_ERROR, DEFAULT_RECONNECT_TIME } from "./constants";
 
 let isInitialized: boolean;
