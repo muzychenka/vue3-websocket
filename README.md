@@ -2,6 +2,7 @@
 Simple package for implementing WebSocket into your Vue 3 application using Composition API
 
 For connection you should provide WS/WSS address as a string line or an object data
+`#0969DA` main.js
 ```js
 import { createApp } from 'vue'
 import App from './App.vue'
