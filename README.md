@@ -32,12 +32,14 @@ Then you can use it in your components
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import { onMessage, onOpen, onClose, onError, send } from 'vue3-websocket'
+import { ref, inject } from 'vue'
+import { onMessage, onOpen, onClose, onError } from 'vue3-websocket'
 
 const text = ref('')
 
-const sendMessage = () => send(text.value)
+const socket = inject('socket')
+
+const sendMessage = () => socket.value.send(text.value)
 
 onOpen(() => {
     console.log('WS connection is stable! ~uWu~')
