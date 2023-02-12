@@ -36,57 +36,47 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     }
 };
 exports.__esModule = true;
-exports.close = exports.send = exports.onError = exports.onClose = exports.onMessage = exports.onOpen = exports["default"] = void 0;
+exports.STATE_CLOSED = exports.STATE_CLOSING = exports.STATE_OPEN = exports.STATE_CONNECTING = exports.DEFAULT_RECONNECT_TIME = exports.onError = exports.onClose = exports.onMessage = exports.onOpen = exports["default"] = void 0;
 var vue_1 = require("vue");
 var constants_1 = require("./constants");
-var isInitialized;
-var connectionString;
-var socket;
-var openCallbacks = [];
-var messageCallbacks = [];
-var closeCallbacks = [];
-var errorCallbacks = [];
-var reconnect = true;
-var reconnectTime = constants_1.DEFAULT_RECONNECT_TIME;
+exports.DEFAULT_RECONNECT_TIME = constants_1.DEFAULT_RECONNECT_TIME;
+exports.STATE_CONNECTING = constants_1.STATE_CONNECTING;
+exports.STATE_OPEN = constants_1.STATE_OPEN;
+exports.STATE_CLOSING = constants_1.STATE_CLOSING;
+exports.STATE_CLOSED = constants_1.STATE_CLOSED;
 var webSocket = {
     install: function (app, data) {
         if (data === void 0) { data = null; }
         if (!data) {
             throw "You must provide websocket data (url string or options object)";
         }
+        var socket = (0, vue_1.ref)();
+        var connectionString;
+        var readyState = (0, vue_1.ref)(0);
+        var openCallbacks = (0, vue_1.ref)([]);
+        var messageCallbacks = (0, vue_1.ref)([]);
+        var closeCallbacks = (0, vue_1.ref)([]);
+        var errorCallbacks = (0, vue_1.ref)([]);
+        var reconnect = true;
+        var reconnectTime = constants_1.DEFAULT_RECONNECT_TIME;
         app.mixin({
-            mounted: function () {
-                return __awaiter(this, void 0, void 0, function () {
-                    return __generator(this, function (_a) {
-                        switch (_a.label) {
-                            case 0: return [4 /*yield*/, (0, vue_1.nextTick)()];
-                            case 1:
-                                _a.sent();
-                                isInitialized = true;
-                                return [2 /*return*/];
-                        }
-                    });
+            beforeUnmount: function () {
+                openCallbacks.value.forEach(function (callback) {
+                    socket.value && socket.value.removeEventListener(constants_1.EVENT_OPEN, callback);
                 });
-            },
-            renderTracked: function (e) {
-                if (isInitialized) {
-                    openCallbacks.forEach(function (callback) {
-                        socket.removeEventListener(constants_1.EVENT_OPEN, callback);
-                    });
-                    messageCallbacks.forEach(function (callback) {
-                        socket.removeEventListener(constants_1.EVENT_MESSAGE, callback);
-                    });
-                    closeCallbacks.forEach(function (callback) {
-                        socket.removeEventListener(constants_1.EVENT_CLOSE, callback);
-                    });
-                    errorCallbacks.forEach(function (callback) {
-                        socket.removeEventListener(constants_1.EVENT_ERROR, callback);
-                    });
-                    openCallbacks = [];
-                    messageCallbacks = [];
-                    closeCallbacks = [];
-                    errorCallbacks = [];
-                }
+                messageCallbacks.value.forEach(function (callback) {
+                    socket.value && socket.value.removeEventListener(constants_1.EVENT_MESSAGE, callback);
+                });
+                closeCallbacks.value.forEach(function (callback) {
+                    socket.value && socket.value.removeEventListener(constants_1.EVENT_CLOSE, callback);
+                });
+                errorCallbacks.value.forEach(function (callback) {
+                    socket.value && socket.value.removeEventListener(constants_1.EVENT_ERROR, callback);
+                });
+                openCallbacks.value = [];
+                messageCallbacks.value = [];
+                closeCallbacks.value = [];
+                errorCallbacks.value = [];
             }
         });
         var debug = true;
@@ -94,8 +84,8 @@ var webSocket = {
             connectionString = data;
         }
         else {
-            var secured = data.secured, url = data.url;
-            if (data.debug) {
+            var secured = data.secured, host = data.host;
+            if (typeof data.debug === "boolean") {
                 debug = data.debug;
             }
             if (data.reconnect) {
@@ -104,104 +94,94 @@ var webSocket = {
             if (data.reconnectTime) {
                 reconnectTime = data.reconnectTime;
             }
-            connectionString = "".concat(secured ? "wss" : "ws", "://").concat(url);
+            connectionString = "".concat(secured ? "wss" : "ws", "://").concat(host);
         }
         var connect = function () {
-            socket = new WebSocket(connectionString);
-            socket.addEventListener(constants_1.EVENT_OPEN, function (event) {
+            socket.value = new WebSocket(connectionString);
+            readyState.value = constants_1.STATE_CONNECTING;
+            socket.value.addEventListener(constants_1.EVENT_OPEN, function () {
                 debug && console.log("%c[WebSocket] ", "color: green", "Connection: opened");
-                openCallbacks.forEach(function (callback) { return socket.addEventListener(constants_1.EVENT_MESSAGE, callback); });
-                messageCallbacks.forEach(function (callback) { return socket.addEventListener(constants_1.EVENT_MESSAGE, callback); });
-                closeCallbacks.forEach(function (callback) { return socket.addEventListener(constants_1.EVENT_CLOSE, callback); });
-                errorCallbacks.forEach(function (callback) { return socket.addEventListener(constants_1.EVENT_ERROR, callback); });
+                openCallbacks.value.forEach(function (callback) { return socket.value && socket.value.addEventListener(constants_1.EVENT_OPEN, callback); });
+                messageCallbacks.value.forEach(function (callback) { return socket.value && socket.value.addEventListener(constants_1.EVENT_MESSAGE, callback); });
+                closeCallbacks.value.forEach(function (callback) { return socket.value && socket.value.addEventListener(constants_1.EVENT_CLOSE, callback); });
+                errorCallbacks.value.forEach(function (callback) { return socket.value && socket.value.addEventListener(constants_1.EVENT_ERROR, callback); });
+                readyState.value = constants_1.STATE_OPEN;
             });
-            socket.addEventListener(constants_1.EVENT_CLOSE, function (event) {
+            socket.value.addEventListener(constants_1.EVENT_CLOSE, function (event) {
                 debug && console.log("%c[WebSocket] ", "color: red", "Connection: closed", event);
                 if (reconnect) {
                     setTimeout(function () { return connect(); }, reconnectTime);
                 }
+                readyState.value = constants_1.STATE_CLOSED;
             });
             if (debug) {
-                socket.addEventListener(constants_1.EVENT_MESSAGE, function (message) {
+                socket.value.addEventListener(constants_1.EVENT_MESSAGE, function (message) {
                     console.log("%c[WebSocket] ", "color: lightblue", "Received message:", message.data);
                 });
-                socket.addEventListener(constants_1.EVENT_ERROR, function (error) {
+                socket.value.addEventListener(constants_1.EVENT_ERROR, function (error) {
                     console.error("%c[WebSocket] ", "color: red", "Error: ", error);
                 });
             }
+            app.provide("socket", socket);
+            app.provide("readyState", readyState);
+            app.provide("openCallbacks", openCallbacks);
+            app.provide("messageCallbacks", messageCallbacks);
+            app.provide("closeCallbacks", closeCallbacks);
+            app.provide("errorCallbacks", errorCallbacks);
         };
         connect();
-        app.provide("socket", socket);
     }
 };
 exports["default"] = webSocket;
 var onOpen = function (callback) { return __awaiter(void 0, void 0, void 0, function () {
+    var socket, openCallbacks;
     return __generator(this, function (_a) {
-        switch (_a.label) {
-            case 0: return [4 /*yield*/, (0, vue_1.nextTick)()];
-            case 1:
-                _a.sent();
-                socket.addEventListener(constants_1.EVENT_OPEN, callback);
-                openCallbacks.push(callback);
-                return [2 /*return*/];
+        socket = (0, vue_1.inject)("socket");
+        openCallbacks = (0, vue_1.inject)("openCallbacks");
+        if (socket && socket.value && openCallbacks && openCallbacks.value) {
+            socket.value.addEventListener(constants_1.EVENT_OPEN, callback);
+            openCallbacks.value.push(callback);
         }
+        return [2 /*return*/];
     });
 }); };
 exports.onOpen = onOpen;
 var onMessage = function (callback) { return __awaiter(void 0, void 0, void 0, function () {
+    var socket, messageCallbacks;
     return __generator(this, function (_a) {
-        switch (_a.label) {
-            case 0: return [4 /*yield*/, (0, vue_1.nextTick)()];
-            case 1:
-                _a.sent();
-                socket.addEventListener(constants_1.EVENT_MESSAGE, callback);
-                messageCallbacks.push(callback);
-                return [2 /*return*/];
+        socket = (0, vue_1.inject)("socket");
+        messageCallbacks = (0, vue_1.inject)("messageCallbacks");
+        if (socket && socket.value && messageCallbacks && messageCallbacks.value) {
+            socket.value.addEventListener(constants_1.EVENT_MESSAGE, callback);
+            messageCallbacks.value.push(callback);
         }
+        return [2 /*return*/];
     });
 }); };
 exports.onMessage = onMessage;
 var onClose = function (callback) { return __awaiter(void 0, void 0, void 0, function () {
+    var socket, closeCallbacks;
     return __generator(this, function (_a) {
-        switch (_a.label) {
-            case 0: return [4 /*yield*/, (0, vue_1.nextTick)()];
-            case 1:
-                _a.sent();
-                socket.addEventListener(constants_1.EVENT_CLOSE, callback);
-                closeCallbacks.push(callback);
-                return [2 /*return*/];
+        socket = (0, vue_1.inject)("socket");
+        closeCallbacks = (0, vue_1.inject)("closeCallbacks");
+        if (socket && socket.value && closeCallbacks && closeCallbacks.value) {
+            socket.value.addEventListener(constants_1.EVENT_CLOSE, callback);
+            closeCallbacks.value.push(callback);
         }
+        return [2 /*return*/];
     });
 }); };
 exports.onClose = onClose;
 var onError = function (callback) { return __awaiter(void 0, void 0, void 0, function () {
+    var socket, errorCallbacks;
     return __generator(this, function (_a) {
-        switch (_a.label) {
-            case 0: return [4 /*yield*/, (0, vue_1.nextTick)()];
-            case 1:
-                _a.sent();
-                socket.addEventListener(constants_1.EVENT_ERROR, callback);
-                errorCallbacks.push(callback);
-                return [2 /*return*/];
+        socket = (0, vue_1.inject)("socket");
+        errorCallbacks = (0, vue_1.inject)("errorCallbacks");
+        if (socket && socket.value && errorCallbacks && errorCallbacks.value) {
+            socket.value.addEventListener(constants_1.EVENT_ERROR, callback);
+            errorCallbacks.value.push(callback);
         }
-    });
-}); };
-exports.onError = onError;
-var send = function (data) { return __awaiter(void 0, void 0, void 0, function () {
-    return __generator(this, function (_a) {
-        socket.send(data);
         return [2 /*return*/];
     });
 }); };
-exports.send = send;
-var close = function (code, reason) {
-    if (code === void 0) { code = 1000; }
-    if (reason === void 0) { reason = ""; }
-    return __awaiter(void 0, void 0, void 0, function () {
-        return __generator(this, function (_a) {
-            socket.close(code, reason);
-            return [2 /*return*/];
-        });
-    });
-};
-exports.close = close;
+exports.onError = onError;

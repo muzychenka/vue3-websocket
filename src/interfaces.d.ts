@@ -1,6 +1,6 @@
 interface Data {
     secured?: string,
-    url: string,
+    host: string,
     debug?: boolean,
     reconnect?: boolean,
     reconnectTime?: number

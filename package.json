@@ -1,9 +1,9 @@
 {
   "name": "vue3-websocket",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Simple package for implementing WebSocket into your Vue 3 application",
   "main": "dist/index.js",
-  "types": "src/index.ts",
+  "types": "src/index",
   "keywords": [
     "vue3",
     "vue",
