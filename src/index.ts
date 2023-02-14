@@ -1,6 +1,6 @@
 import { App, Plugin, ref, inject } from "vue";
 import type { Ref } from "vue";
-import { Data, MessageData } from "./interfaces.d";
+import { Data } from "./interfaces.d";
 import { EVENT_OPEN, EVENT_MESSAGE, EVENT_CLOSE, EVENT_ERROR, DEFAULT_RECONNECT_TIME, STATE_CONNECTING, STATE_OPEN, STATE_CLOSING, STATE_CLOSED } from "./constants";
 
 const webSocket: Plugin = {
@@ -15,6 +15,7 @@ const webSocket: Plugin = {
         const messageCallbacks: Ref<Function[]> = ref([]);
         const closeCallbacks: Ref<Function[]> = ref([]);
         const errorCallbacks: Ref<Function[]> = ref([]);
+        let protocols: string[] = [];
         let reconnect: boolean = true;
         let reconnectTime: number = DEFAULT_RECONNECT_TIME;
         app.mixin({
@@ -46,16 +47,19 @@ const webSocket: Plugin = {
             if (typeof data.debug === "boolean") {
                 debug = data.debug;
             }
-            if (data.reconnect) {
+            if (typeof data.reconnect === "boolean") {
                 reconnect = data.reconnect;
             }
-            if (data.reconnectTime) {
+            if (typeof data.reconnectTime === "number") {
                 reconnectTime = data.reconnectTime;
+            }
+            if (Array.isArray(data.protocols)) {
+                protocols = data.protocols;
             }
             connectionString = `${secured ? "wss" : "ws"}://${host}`;
         }
         const connect = () => {
-            socket.value = new WebSocket(connectionString);
+            socket.value = new WebSocket(connectionString, protocols);
             readyState.value = STATE_CONNECTING;
             socket.value.addEventListener(EVENT_OPEN, () => {
                 debug && console.log("%c[WebSocket] ", "color: green", "Connection: opened");
@@ -65,7 +69,7 @@ const webSocket: Plugin = {
                 errorCallbacks.value.forEach((callback: any) => socket.value && socket.value.addEventListener(EVENT_ERROR, callback));
                 readyState.value = STATE_OPEN;
             });
-            socket.value.addEventListener(EVENT_CLOSE, (event: any) => {
+            socket.value.addEventListener(EVENT_CLOSE, function (this: WebSocket, event: CloseEvent) {
                 debug && console.log("%c[WebSocket] ", "color: red", "Connection: closed", event);
                 if (reconnect) {
                     setTimeout(() => connect(), reconnectTime);
@@ -73,25 +77,25 @@ const webSocket: Plugin = {
                 readyState.value = STATE_CLOSED;
             });
             if (debug) {
-                socket.value.addEventListener(EVENT_MESSAGE, (message: MessageData) => {
+                socket.value.addEventListener(EVENT_MESSAGE, function (this: WebSocket, message: MessageEvent<any>) {
                     console.log("%c[WebSocket] ", "color: lightblue", "Received message:", message.data);
                 });
-                socket.value.addEventListener(EVENT_ERROR, (error: any) => {
+                socket.value.addEventListener(EVENT_ERROR, function (this: WebSocket, error: Event) {
                     console.error("%c[WebSocket] ", "color: red", "Error: ", error);
                 });
             }
-            app.provide("socket", socket);
-            app.provide("readyState", readyState);
-            app.provide("openCallbacks", openCallbacks);
-            app.provide("messageCallbacks", messageCallbacks);
-            app.provide("closeCallbacks", closeCallbacks);
-            app.provide("errorCallbacks", errorCallbacks);
         }
         connect();
+        app.provide("socket", socket);
+        app.provide("readyState", readyState);
+        app.provide("openCallbacks", openCallbacks);
+        app.provide("messageCallbacks", messageCallbacks);
+        app.provide("closeCallbacks", closeCallbacks);
+        app.provide("errorCallbacks", errorCallbacks);
     }
 };
 
-const onOpen = async (callback: any) => {
+const onOpen = (callback: any) => {
     const socket: Ref<WebSocket> | undefined = inject("socket");
     const openCallbacks: Ref<Function[]> | undefined = inject("openCallbacks");
     if (socket && socket.value && openCallbacks && openCallbacks.value) {
@@ -100,7 +104,7 @@ const onOpen = async (callback: any) => {
     }
 };
 
-const onMessage = async (callback: any) => {
+const onMessage = (callback: any) => {
     const socket: Ref<WebSocket> | undefined = inject("socket");
     const messageCallbacks: Ref<Function[]> | undefined = inject("messageCallbacks");
     if (socket && socket.value && messageCallbacks && messageCallbacks.value) {
@@ -109,7 +113,7 @@ const onMessage = async (callback: any) => {
     }
 };
 
-const onClose = async (callback: any) => {
+const onClose = (callback: any) => {
     const socket: Ref<WebSocket> | undefined = inject("socket");
     const closeCallbacks: Ref<Function[]> | undefined = inject("closeCallbacks");
     if (socket && socket.value && closeCallbacks && closeCallbacks.value) {
@@ -118,7 +122,7 @@ const onClose = async (callback: any) => {
     }
 };
 
-const onError = async (callback: any) => {
+const onError = (callback: any) => {
     const socket: Ref<WebSocket> | undefined = inject("socket");
     const errorCallbacks: Ref<Function[]> | undefined = inject("errorCallbacks");
     if (socket && socket.value && errorCallbacks && errorCallbacks.value) {

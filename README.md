@@ -19,7 +19,8 @@ app.use(socket, 'ws://localhost:9000')
 /*  OR use object data: 
 app.use(socket, {
     secure: false,
-    host: 'localhost:9000'
+    host: 'localhost:9000',
+    protocols: ['soap']
 }) */
 
 app.mount('#app')
@@ -77,12 +78,13 @@ watch(() => readyState.value, value => {
 Connection options interface:
 ```ts
 interface Data {
-    secured?: string,
+    secured?: boolean,
     host: string,
     debug?: boolean,
     reconnect?: boolean,
-    reconnectTime?: number
-};
+    reconnectTime?: number,
+    protocols?: string[]
+}
 ```
 
 If debug is set to true, there will be debug messages in the console about each WS event

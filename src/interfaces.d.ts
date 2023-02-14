@@ -1,13 +1,10 @@
 interface Data {
-    secured?: string,
+    secured?: boolean,
     host: string,
     debug?: boolean,
     reconnect?: boolean,
-    reconnectTime?: number
+    reconnectTime?: number,
+    protocols?: string[]
 }
 
-interface MessageData {
-    data: string
-}
-
-export { Data, MessageData };
+export { Data };
