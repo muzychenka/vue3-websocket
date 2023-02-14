@@ -18,7 +18,7 @@ app.use(socket, 'ws://localhost:9000')
 
 /*  OR use object data: 
 app.use(socket, {
-    secure: false,
+    secured: false,
     host: 'localhost:9000',
     protocols: ['soap']
 }) */
