@@ -1,97 +1,105 @@
 # Vue 3 WebSocket
+
+>[!WARNING]
+>Since v2.0.0 it's not a plugin anymore, but a composable
+
 Simple package for implementing WebSocket into your Vue 3 application using Composition API
 
-Install dependency via npm
+Install dependency via pnpm/npm
+```
+pnpm add vue3-websocket
+```
+or
 ```
 npm i vue3-websocket
 ```
 
 For connection you should provide WS/WSS address as a string line or an object data
-```js
-import { createApp } from 'vue'
-import App from './App.vue'
-import socket from 'vue3-websocket'
+```vue
+<script setup lang="ts">
+import { RouterView } from 'vue-router'
+import { useWebSocket } from 'vue3-websocket'
 
-const app = createApp(App)
+const { connect, onMessage, onClose } = useWebSocket('ws://127.0.0.1:8000')
+/* OR
+const { connect, onMessage, onClose } = useWebSocket({ host: '127.0.0.1:8000' })
+*/
 
-app.use(socket, 'ws://localhost:9000')
+connect()
 
-/*  OR use object data: 
-app.use(socket, {
-    secured: false,
-    host: 'localhost:9000',
-    protocols: ['soap']
-}) */
-
-app.mount('#app')
-```
-Then you can use it in your components
-```js
-<template>
-    <input v-model="text" />
-    <button @click="sendMessage">Send a message</button>
-</template>
-
-<script setup>
-import { ref, inject } from 'vue'
-import { onMessage, onOpen, onClose, onError } from 'vue3-websocket'
-
-const text = ref('')
-
-const socket = inject('socket')
-
-const sendMessage = () => socket.value.send(text.value)
-
-onOpen(() => {
-    console.log('WS connection is stable! ~uWu~')
-})
-
-onMessage(message => {
-    console.log('Got a message from the WS: ', message)
+onMessage<{ test: string }>(({ test }) => {
+    console.log(test)
 })
 
 onClose(() => {
-    console.log('No way, connection has been closed 😥')
+    console.log('Connection closed')
 })
+</script>
 
-onError(error => {
-    console.error('Error: ', error)
+<template>
+    <RouterView />
+</template>
+```
+
+Direct manipulation of socket connection
+```vue
+<script setup lang="ts">
+const { socket } = useWebSocket('ws://127.0.0.1:8000')
+socket.value.close()
+</script>
+```
+
+Providing typed interfaces for incoming messages
+```vue
+<script setup lang="ts">
+import { watch } from 'vue'
+import { useWebSocket } from 'vue3-websocket'
+
+const { connect, onMessage, onClose } = useWebSocket('ws://127.0.0.1:8000')
+
+connect()
+
+onMessage<{ name: string, surname: string, age: number }>(({ name, surname, age }) => {
+    console.log(`Your account is: ${name}, ${surname}, ${age}`)
 })
 </script>
 ```
 
-You can also inject socket connection directly
-```js
-const socket = inject('socket')
-```
-
 There is a reactive readyState field available.
-You can track it with watchers
-```js
-const readyState = inject('readyState')
+You can track it using watchers
+```vue
+<script setup lang="ts">
+const { readyState } = useWebSocket('ws://127.0.0.1:8000')
 
 watch(() => readyState.value, value => {
     console.log('New value: ', value)
-})
+}, { immediate: true })
+</script>
 ```
 
-Connection options interface:
+Connection options interfaces
 ```ts
-interface Data {
-    secured?: boolean,
-    host: string,
-    debug?: boolean,
-    reconnect?: boolean,
-    reconnectTime?: number,
+interface IConnection extends IConnectionOptions {
+    secured?: boolean
+    host: string
+    path?: string
+    debug?: boolean
+}
+
+interface IConnectionOptions {
+    debug?: boolean
+    reconnect?: boolean
+    reconnectDelay?: number
     protocols?: string[]
 }
 ```
 
-If debug is set to true, there will be debug messages in the console about each WS event
+If debug is set to true, there will be debug messages in the console about some WS events
 
-Events:
+Available events:
 + onOpen
 + onMessage
++ onRawMessage
 + onClose
 + onError
 
