@@ -3,7 +3,7 @@
     "version": "2.0.4",
     "description": "Simple package for implementing WebSocket into your Vue 3 application",
     "main": "dist/index.js",
-    "types": "index",
+    "types": "dist/index.d.ts",
     "keywords": [
         "vue3",
         "vue",
@@ -26,7 +26,7 @@
         "zod": "^3.23.6"
     },
     "scripts": {
-        "build": "tsc"
+        "build": "tsc --declaration"
     },
     "repository": {
         "type": "git",
