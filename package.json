@@ -1,31 +1,32 @@
 {
-    "name": "vue3-websocket",
-    "description": "Simple package for implementing WebSocket into your Vue 3 application",
-    "main": "./src/dist/index.js",
-    "types": "src/index",
-    "scripts": {
-        "build": "tsc",
-        "test": "jest ./src/test"
-    },
-    "repository": {
-        "type": "git",
-        "url": "https://github.com/muzychenka/vue3-websocket.git"
-    },
-    "devDependencies": {
-        "@types/jest": "^29.5.12",
-        "@types/node": "^20.12.8",
-        "@types/ws": "^8.5.10",
-        "jest": "^29.7.0",
-        "jest-environment-jsdom": "^29.7.0",
-        "jest-websocket-mock": "^2.5.0",
-        "ts-jest": "^29.1.2",
-        "ts-node": "^8.10.2",
-        "typescript": "~5.4.5",
-        "vue": "^3.4.26",
-        "zod": "^3.23.6"
-    },
-    "license": "MIT",
-    "dependencies": {
-        "ws": "^8.17.0"
-    }
+  "name": "vue3-websocket",
+  "description": "Simple package for implementing WebSocket into your Vue 3 application",
+  "main": "./src/dist/index.js",
+  "types": "src/index",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest ./src/test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/muzychenka/vue3-websocket.git"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.12",
+    "@types/node": "^20.12.8",
+    "@types/ws": "^8.5.10",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0",
+    "jest-websocket-mock": "^2.5.0",
+    "lerna": "^8.1.2",
+    "ts-jest": "^29.1.2",
+    "ts-node": "^8.10.2",
+    "typescript": "~5.4.5",
+    "vue": "^3.4.26",
+    "zod": "^3.23.6"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.17.0"
+  }
 }

@@ -1,11 +1,11 @@
 {
     "compilerOptions": {
-        "outDir": "./src/dist",
+        "outDir": "./packages/vue3-websocket/dist",
         "lib": ["dom", "ES2019"],
         "target": "ES2019",
         "module": "commonjs",
         "sourceMap": false
     },
-    "include": ["src/**/*"],
-    "exclude": ["node_modules", "src/sandbox", "src/tests"]
+    "include": ["packages/vue3-websocket/**/*"],
+    "exclude": ["node_modules", "packages/vue3-websocket/sandbox", "packages/vue3-websocket/tests"]
 }
