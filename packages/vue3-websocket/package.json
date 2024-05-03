@@ -33,11 +33,7 @@
         "url": "https://github.com/muzychenka/vue3-websocket.git"
     },
     "files": [
-        "dist/",
-        "index",
-        "schemas",
-        "types",
-        "constants"
+        "dist/"
     ],
     "author": "dmuzychenko",
     "license": "MIT"
