@@ -1,11 +1,13 @@
 {
-    "$schema": "node_modules/lerna/schemas/lerna-schema.json",
-    "version": "2.0.0",
-    "packages": ["packages/*"],
-    "command": {
-        "version": {
-            "push": true
-        }
-    },
-    "npmClient": "pnpm"
+  "$schema": "node_modules/lerna/schemas/lerna-schema.json",
+  "version": "2.0.0",
+  "packages": [
+    "packages/*"
+  ],
+  "command": {
+    "version": {
+      "push": true
+    }
+  },
+  "npmClient": "pnpm"
 }
