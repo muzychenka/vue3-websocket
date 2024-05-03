@@ -1,6 +1,6 @@
 # Vue 3 WebSocket
 
-> [!WARNING]
+> [!IMPORTANT]
 > Since v2.0.0 it's not a plugin anymore, but a composable
 
 Simple package for implementing WebSocket into your Vue 3 application using Composition API
