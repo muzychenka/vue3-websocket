@@ -112,7 +112,15 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
         callbacks.open.add(callback)
     }
 
-    function onMessage(callback: ICallback<MessageEvent>) {
+    function onMessage<T>(callback: (data: T) => void) {
+        const wrapper = function (event: MessageEvent) {
+            return callback(JSON.parse(event.data))
+        }
+        socket.value.addEventListener(eEvent.enum.message, wrapper)
+        callbacks.message.add(wrapper)
+    }
+
+    function onRawMessage(callback: ICallback<MessageEvent>) {
         socket.value.addEventListener(eEvent.enum.message, callback)
         callbacks.message.add(callback)
     }
@@ -137,6 +145,7 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
 
         onOpen,
         onMessage,
+        onRawMessage,
         onClose,
         onError
     }
