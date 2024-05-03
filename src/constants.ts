@@ -1,9 +1,1 @@
-export const EVENT_OPEN: "open" = "open";
-export const EVENT_CLOSE: "close" = "close";
-export const EVENT_MESSAGE: "message" = "message";
-export const EVENT_ERROR: "error" = "error";
-export const DEFAULT_RECONNECT_TIME: number = 2000;
-export const STATE_CONNECTING: number = 0;
-export const STATE_OPEN: number = 1;
-export const STATE_CLOSING: number = 2;
-export const STATE_CLOSED: number = 3;
+export const DEFAULT_RECONNECT_DELAY = 2000

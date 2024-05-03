@@ -1,136 +1,153 @@
-import { App, Plugin, ref, inject } from "vue";
-import type { Ref } from "vue";
-import { Data } from "./interfaces.d";
-import { EVENT_OPEN, EVENT_MESSAGE, EVENT_CLOSE, EVENT_ERROR, DEFAULT_RECONNECT_TIME, STATE_CONNECTING, STATE_OPEN, STATE_CLOSING, STATE_CLOSED } from "./constants";
+import { ref, reactive } from 'vue'
+import type { IConnection, IConnectionOptions } from './types'
+import {
+    eEvent,
+    EState,
+    type TEvent,
+    type ICallback,
+    type IMessageCallback,
+    type ICloseCallback,
+    type IOptions
+} from './types'
+import { DEFAULT_RECONNECT_DELAY } from './constants'
+import { arg1Schema, arg2Schema } from './schemas'
 
-const webSocket: Plugin = {
-    install: (app: App, data: (Data | string | null) = null): void => {
-        if (!data) {
-            throw "You must provide websocket data (url string or options object)";
+export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptions) {
+    if (!arg1) {
+        throw new Error('You must provide websocket data (url string or options object)')
+    }
+
+    const options = reactive<IOptions>({
+        debug: true,
+        reconnect: true,
+        reconnectDelay: DEFAULT_RECONNECT_DELAY
+    })
+
+    const socket = ref<WebSocket>()
+    const readyState = ref(EState.CONNECTING)
+    const callbacks = reactive({
+        open: new Set<ICallback>([]),
+        message: new Set<IMessageCallback>([]),
+        close: new Set<ICloseCallback>([]),
+        error: new Set<ICallback>([])
+    })
+
+    if (typeof arg1 === 'object') {
+        arg1Schema.parse(arg1)
+        const { secured, host, path } = arg1
+        options.connectionString = `${secured ? 'wss' : 'ws'}://${host}${
+            path ? (path.startsWith('/') ? path : '/' + path) : ''
+        }`
+    } else {
+        options.connectionString = arg1
+    }
+
+    if (typeof arg2 === 'object') {
+        arg2Schema.parse(arg2)
+    }
+
+    const data = typeof arg1 === 'string' ? arg2 : arg1
+
+    for (const [key] of Object.entries(data || {})) {
+        if (data[key] !== undefined) {
+            options[key] = data[key]
         }
-        const socket: Ref<WebSocket | undefined> = ref();
-        let connectionString: string;
-        const readyState: Ref<number> = ref(0);
-        const openCallbacks: Ref<Function[]> = ref([]);
-        const messageCallbacks: Ref<Function[]> = ref([]);
-        const closeCallbacks: Ref<Function[]> = ref([]);
-        const errorCallbacks: Ref<Function[]> = ref([]);
-        let protocols: string[] = [];
-        let reconnect: boolean = true;
-        let reconnectTime: number = DEFAULT_RECONNECT_TIME;
-        app.mixin({
-            beforeUnmount() {
-                openCallbacks.value.forEach((callback: any) => {
-                    socket.value && socket.value.removeEventListener(EVENT_OPEN, callback);
-                });
-                messageCallbacks.value.forEach((callback: any) => {
-                    socket.value && socket.value.removeEventListener(EVENT_MESSAGE, callback);
-                });
-                closeCallbacks.value.forEach((callback: any) => {
-                    socket.value && socket.value.removeEventListener(EVENT_CLOSE, callback);
-                });
-                errorCallbacks.value.forEach((callback: any) => {
-                    socket.value && socket.value.removeEventListener(EVENT_ERROR, callback);
-                });
-                openCallbacks.value = [];
-                messageCallbacks.value = [];
-                closeCallbacks.value = [];
-                errorCallbacks.value = [];
-            }
-        });
-        let debug: boolean = true;
-        if (typeof data === "string") {
-            connectionString = data;
+    }
+
+    function connect() {
+        socket.value = new WebSocket(options.connectionString, options.protocols)
+        readyState.value = EState.CONNECTING
+
+        for (const callback of Array.from(callbacks.open)) {
+            socket.value && socket.value.addEventListener(eEvent.enum.open, callback)
         }
-        else {
-            const { secured, host } = data
-            if (typeof data.debug === "boolean") {
-                debug = data.debug;
-            }
-            if (typeof data.reconnect === "boolean") {
-                reconnect = data.reconnect;
-            }
-            if (typeof data.reconnectTime === "number") {
-                reconnectTime = data.reconnectTime;
-            }
-            if (Array.isArray(data.protocols)) {
-                protocols = data.protocols;
-            }
-            connectionString = `${secured ? "wss" : "ws"}://${host}`;
+
+        for (const callback of Array.from(callbacks.message)) {
+            socket.value && socket.value.addEventListener(eEvent.enum.message, callback)
         }
-        const connect = () => {
-            socket.value = new WebSocket(connectionString, protocols);
-            readyState.value = STATE_CONNECTING;
-            socket.value.addEventListener(EVENT_OPEN, () => {
-                debug && console.log("%c[WebSocket] ", "color: green", "Connection: opened");
-                openCallbacks.value.forEach((callback: any) => socket.value && socket.value.addEventListener(EVENT_OPEN, callback));
-                messageCallbacks.value.forEach((callback: any) => socket.value && socket.value.addEventListener(EVENT_MESSAGE, callback));
-                closeCallbacks.value.forEach((callback: any) => socket.value && socket.value.addEventListener(EVENT_CLOSE, callback));
-                errorCallbacks.value.forEach((callback: any) => socket.value && socket.value.addEventListener(EVENT_ERROR, callback));
-                readyState.value = STATE_OPEN;
-            });
-            socket.value.addEventListener(EVENT_CLOSE, function (this: WebSocket, event: CloseEvent) {
-                debug && console.log("%c[WebSocket] ", "color: red", "Connection: closed", event);
-                if (reconnect) {
-                    setTimeout(() => connect(), reconnectTime);
+
+        for (const callback of Array.from(callbacks.close)) {
+            socket.value && socket.value.addEventListener(eEvent.enum.close, callback)
+        }
+
+        for (const callback of Array.from(callbacks.error)) {
+            socket.value && socket.value.addEventListener(eEvent.enum.error, callback)
+        }
+
+        socket.value.addEventListener(eEvent.enum.open, () => {
+            readyState.value = EState.OPEN
+            options.debug && console.log('%c[WebSocket] ', 'color: green', 'Connection: opened')
+        })
+
+        socket.value.addEventListener(
+            eEvent.enum.close,
+            function (this: WebSocket, event: CloseEvent) {
+                options.debug &&
+                    console.log('%c[WebSocket] ', 'color: red', 'Connection: closed', event)
+
+                if (options.reconnect) {
+                    setTimeout(() => connect(), options.reconnectDelay)
                 }
-                readyState.value = STATE_CLOSED;
-            });
-            if (debug) {
-                socket.value.addEventListener(EVENT_MESSAGE, function (this: WebSocket, message: MessageEvent<any>) {
-                    console.log("%c[WebSocket] ", "color: lightblue", "Received message:", message.data);
-                });
-                socket.value.addEventListener(EVENT_ERROR, function (this: WebSocket, error: Event) {
-                    console.error("%c[WebSocket] ", "color: red", "Error: ", error);
-                });
+
+                readyState.value = EState.CLOSED
             }
+        )
+
+        if (options.debug) {
+            socket.value.addEventListener(
+                eEvent.enum.message,
+                function (this: WebSocket, message: MessageEvent) {
+                    console.log(
+                        '%c[WebSocket] ',
+                        'color: lightblue',
+                        'Received message:',
+                        message.data
+                    )
+                }
+            )
+            socket.value.addEventListener(eEvent.enum.error, function (this: string, error: Event) {
+                console.error('%c[WebSocket] ', 'color: red', 'Error: ', error)
+            })
         }
-        connect();
-        app.provide("socket", socket);
-        app.provide("readyState", readyState);
-        app.provide("openCallbacks", openCallbacks);
-        app.provide("messageCallbacks", messageCallbacks);
-        app.provide("closeCallbacks", closeCallbacks);
-        app.provide("errorCallbacks", errorCallbacks);
     }
-};
 
-const onOpen = (callback: any) => {
-    const socket: Ref<WebSocket> | undefined = inject("socket");
-    const openCallbacks: Ref<Function[]> | undefined = inject("openCallbacks");
-    if (socket && socket.value && openCallbacks && openCallbacks.value) {
-        socket.value.addEventListener(EVENT_OPEN, callback);
-        openCallbacks.value.push(callback);
+    function disconnect() {
+        socket.value.close()
     }
-};
 
-const onMessage = (callback: any) => {
-    const socket: Ref<WebSocket> | undefined = inject("socket");
-    const messageCallbacks: Ref<Function[]> | undefined = inject("messageCallbacks");
-    if (socket && socket.value && messageCallbacks && messageCallbacks.value) {
-        socket.value.addEventListener(EVENT_MESSAGE, callback);
-        messageCallbacks.value.push(callback);
+    function onOpen(callback: ICallback) {
+        socket.value.addEventListener(eEvent.enum.open, callback)
+        callbacks.open.add(callback)
     }
-};
 
-const onClose = (callback: any) => {
-    const socket: Ref<WebSocket> | undefined = inject("socket");
-    const closeCallbacks: Ref<Function[]> | undefined = inject("closeCallbacks");
-    if (socket && socket.value && closeCallbacks && closeCallbacks.value) {
-        socket.value.addEventListener(EVENT_CLOSE, callback);
-        closeCallbacks.value.push(callback);
+    function onMessage(callback: IMessageCallback) {
+        socket.value.addEventListener(eEvent.enum.message, callback)
+        callbacks.message.add(callback)
     }
-};
 
-const onError = (callback: any) => {
-    const socket: Ref<WebSocket> | undefined = inject("socket");
-    const errorCallbacks: Ref<Function[]> | undefined = inject("errorCallbacks");
-    if (socket && socket.value && errorCallbacks && errorCallbacks.value) {
-        socket.value.addEventListener(EVENT_ERROR, callback);
-        errorCallbacks.value.push(callback);
+    function onClose(callback: ICloseCallback) {
+        socket.value.addEventListener(eEvent.enum.close, callback)
+        callbacks.close.add(callback)
     }
-};
 
-export { webSocket as default };
-export { onOpen, onMessage, onClose, onError };
-export { DEFAULT_RECONNECT_TIME, STATE_CONNECTING, STATE_OPEN, STATE_CLOSING, STATE_CLOSED };
+    function onError(callback: ICallback) {
+        socket.value.addEventListener(eEvent.enum.error, callback)
+        callbacks.error.add(callback)
+    }
+
+    return {
+        socket,
+        options,
+        readyState,
+
+        connect,
+        disconnect,
+
+        onOpen,
+        onMessage,
+        onClose,
+        onError
+    }
+}
+
+export { DEFAULT_RECONNECT_DELAY, TEvent, eEvent, IConnection, IConnectionOptions }

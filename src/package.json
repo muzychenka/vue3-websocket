@@ -1,0 +1,23 @@
+{
+    "name": "vue3-websocket",
+    "version": "2.0.0",
+    "description": "Simple package for implementing WebSocket into your Vue 3 application",
+    "main": "dist/index.js",
+    "types": "src/index",
+    "keywords": [
+        "vue3",
+        "vue",
+        "websocket",
+        "composition",
+        "api"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/muzychenka/vue3-websocket.git"
+    },
+    "files": [
+        "dist/"
+    ],
+    "author": "dmuzychenko",
+    "license": "MIT"
+}
