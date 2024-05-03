@@ -1,0 +1,1 @@
+export const DEFAULT_RECONNECT_DELAY = 2000
