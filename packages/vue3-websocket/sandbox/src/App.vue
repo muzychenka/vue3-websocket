@@ -3,11 +3,6 @@ import { RouterView } from 'vue-router'
 import { useWebSocket } from '../../index'
 import { onMounted } from 'vue'
 
-/* const { socket, onOpen, disconnect, connect, onMessage } = useWebSocket(
-    'wss://demo.piesocket.com/v3/channel_123?api_key=VCXCEuvhGcBDP7XhiJJUDvR1e1D3eiVjgZ9VRiaV&notify_self',
-    { debug: undefined, protocols: [] }
-) */
-
 const { socket, onOpen, disconnect, connect, onMessage } = useWebSocket({
     host: 'demo.piesocket.com',
     path: 'v3/channel_123?api_key=VCXCEuvhGcBDP7XhiJJUDvR1e1D3eiVjgZ9VRiaV&notify_self',
