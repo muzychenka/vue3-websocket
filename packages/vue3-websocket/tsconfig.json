@@ -6,5 +6,5 @@
         "module": "commonjs",
         "sourceMap": false
     },
-    "exclude": ["node_modules", "sandbox", "tests", "dist"]
+    "exclude": ["node_modules", "sandbox", "tests", "dist", "wsServer.ts"]
 }

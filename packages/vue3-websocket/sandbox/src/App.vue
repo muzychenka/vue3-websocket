@@ -2,13 +2,13 @@
 import { RouterView } from 'vue-router'
 import { useWebSocket } from '../../index'
 
-const { onOpen, disconnect, connect, onMessage } = useWebSocket({
-    host: 'test.com',
-    path: 'bla-bla-bla',
-    secured: true
-})
+const { connect, onMessage } = useWebSocket('ws://127.0.0.1:8000')
 
-// connect()
+connect()
+
+onMessage<{ test: string }>(({ test }) => {
+    console.log(test)
+})
 </script>
 
 <template>
