@@ -112,12 +112,12 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
         callbacks.open.add(callback)
     }
 
-    function onMessage(callback: IMessageCallback) {
+    function onMessage(callback: ICallback<MessageEvent>) {
         socket.value.addEventListener(eEvent.enum.message, callback)
         callbacks.message.add(callback)
     }
 
-    function onClose(callback: ICloseCallback) {
+    function onClose(callback: ICallback<CloseEvent>) {
         socket.value.addEventListener(eEvent.enum.close, callback)
         callbacks.close.add(callback)
     }
