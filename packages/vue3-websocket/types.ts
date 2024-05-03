@@ -32,14 +32,6 @@ export interface IOptions {
     reconnectDelay: number
 }
 
-export interface ICallback {
-    (this: WebSocket, ev: Event): void
-}
-
-export interface IMessageCallback {
-    (this: WebSocket, ev: MessageEvent): void
-}
-
-export interface ICloseCallback {
-    (this: WebSocket, ev: CloseEvent): void
+export interface ICallback<T = Event> {
+    (this: WebSocket, ev: T): void
 }

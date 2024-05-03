@@ -1,14 +1,6 @@
 import { ref, reactive } from 'vue'
 import type { IConnection, IConnectionOptions } from './types'
-import {
-    eEvent,
-    EState,
-    type TEvent,
-    type ICallback,
-    type IMessageCallback,
-    type ICloseCallback,
-    type IOptions
-} from './types'
+import { eEvent, EState, type TEvent, type ICallback, type IOptions } from './types'
 import { DEFAULT_RECONNECT_DELAY } from './constants'
 import { arg1Schema, arg2Schema } from './schemas'
 
@@ -27,8 +19,8 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
     const readyState = ref(EState.CONNECTING)
     const callbacks = reactive({
         open: new Set<ICallback>([]),
-        message: new Set<IMessageCallback>([]),
-        close: new Set<ICloseCallback>([]),
+        message: new Set<ICallback<MessageEvent>>([]),
+        close: new Set<ICallback<CloseEvent>>([]),
         error: new Set<ICallback>([])
     })
 
