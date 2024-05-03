@@ -26,7 +26,8 @@
         "zod": "^3.23.6"
     },
     "scripts": {
-        "build": "tsc --declaration"
+        "build": "tsc --declaration",
+        "test": "jest test"
     },
     "repository": {
         "type": "git",
