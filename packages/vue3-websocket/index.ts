@@ -114,7 +114,9 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
 
     function onMessage<T>(callback: (data: T) => void) {
         const wrapper = function (event: MessageEvent) {
-            return callback(JSON.parse(event.data))
+            try {
+                return callback(JSON.parse(event.data))
+            } catch (e) {}
         }
         socket.value.addEventListener(eEvent.enum.message, wrapper)
         callbacks.message.add(wrapper)
