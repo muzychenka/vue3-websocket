@@ -110,8 +110,8 @@ If debug is set to true, there will be debug messages in the console about some 
 
 Available events:
 
--   onOpen
--   onMessage
--   onRawMessage
--   onClose
--   onError
+-   onOpen - open connection event
+-   onMessage - for JSON-based incoming messages
+-   onRawMessage - for any type of incoming messages
+-   onClose - close connection event
+-   onError - error connection event
