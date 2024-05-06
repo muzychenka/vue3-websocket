@@ -21,6 +21,7 @@ For connection you should provide WS/WSS address as a string line or an object d
 
 ```vue
 <script setup lang="ts">
+import { z } from 'zod'
 import { RouterView } from 'vue-router'
 import { useWebSocket } from 'vue3-websocket'
 
@@ -31,8 +32,13 @@ const { connect, onMessage, onClose } = useWebSocket({ host: '127.0.0.1:8000' })
 
 connect()
 
-onMessage<{ test: string }>(({ test }) => {
-    console.log(test)
+const accountSchema = z.object({
+    name: z.string()
+})
+type TAccount = z.infer<typeof accountSchema>
+
+onMessage<TAccount>(accountSchema, ({ name }) => {
+    console.log(`Your name is: ${name}`)
 })
 
 onClose(() => {
@@ -58,6 +64,7 @@ Providing typed interfaces for incoming messages
 
 ```vue
 <script setup lang="ts">
+import { z } from 'zod'
 import { watch } from 'vue'
 import { useWebSocket } from 'vue3-websocket'
 
@@ -65,7 +72,14 @@ const { connect, onMessage, onClose } = useWebSocket('ws://127.0.0.1:8000')
 
 connect()
 
-onMessage<{ name: string; surname: string; age: number }>(({ name, surname, age }) => {
+const accountSchema = z.object({
+    name: z.string(),
+    surname: z.string(),
+    age: z.number()
+})
+type TAccount = z.infer<typeof accountSchema>
+
+onMessage<TAccount>(accountSchema, ({ name, surname, age }) => {
     console.log(`Your account is: ${name}, ${surname}, ${age}`)
 })
 </script>
