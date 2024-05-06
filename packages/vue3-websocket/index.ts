@@ -1,4 +1,5 @@
 import { ref, reactive } from 'vue'
+import { z } from 'zod'
 import type { IConnection, IConnectionOptions } from './types'
 import { eEvent, EState, type TEvent, type ICallback, type IOptions } from './types'
 import { DEFAULT_RECONNECT_DELAY } from './constants'
@@ -112,11 +113,24 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
         callbacks.open.add(callback)
     }
 
-    function onMessage<T>(callback: (data: T) => void) {
+    function onMessage<T>(schema: z.Schema, callback: (data: T) => void) {
         const wrapper = function (event: MessageEvent) {
             try {
-                return callback(JSON.parse(event.data))
-            } catch (e) {}
+                let eventData
+                try {
+                    eventData = JSON.parse(event.data)
+                } catch (e) {
+                    throw new Error(`Wrong JSON received for the validator: ${schema}`)
+                }
+                const { success } = schema.safeParse(eventData)
+                if (success) {
+                    return callback(eventData)
+                }
+            } catch (e) {
+                if (e instanceof Error && !e.message.includes('Wrong JSON')) {
+                    console.error(e)
+                }
+            }
         }
         socket.value.addEventListener(eEvent.enum.message, wrapper)
         callbacks.message.add(wrapper)
