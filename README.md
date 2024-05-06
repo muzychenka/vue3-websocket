@@ -17,6 +17,18 @@ or
 npm i vue3-websocket
 ```
 
+You'll also need zod to be installed
+
+```
+pnpm add -D zod
+```
+
+or
+
+```
+npm i zod --save-dev
+```
+
 For connection you should provide WS/WSS address as a string line or an object data
 
 ```vue
