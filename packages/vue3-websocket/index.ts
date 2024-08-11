@@ -134,6 +134,7 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
         }
         socket.value.addEventListener(eEvent.enum.message, wrapper)
         callbacks.message.add(wrapper)
+        return wrapper
     }
 
     function onRawMessage(callback: ICallback<MessageEvent>) {
