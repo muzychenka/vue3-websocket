@@ -113,6 +113,11 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
         callbacks.open.add(callback)
     }
 
+    function removeOnOpen(callback: ICallback) {
+        socket.value.removeEventListener(eEvent.enum.open, callback)
+        callbacks.open.delete(callback)
+    }
+
     function onMessage<T>(schema: z.Schema, callback: (data: T) => void) {
         const wrapper = function (event: MessageEvent) {
             try {
@@ -137,9 +142,19 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
         return wrapper
     }
 
+    function removeOnMessage(callback: ICallback<MessageEvent>) {
+        socket.value.removeEventListener(eEvent.enum.message, callback)
+        callbacks.message.delete(callback)
+    }
+
     function onRawMessage(callback: ICallback<MessageEvent>) {
         socket.value.addEventListener(eEvent.enum.message, callback)
         callbacks.message.add(callback)
+    }
+
+    function removeOnRawMessage(callback: ICallback<MessageEvent>) {
+        socket.value.removeEventListener(eEvent.enum.message, callback)
+        callbacks.message.delete(callback)
     }
 
     function onClose(callback: ICallback<CloseEvent>) {
@@ -147,9 +162,19 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
         callbacks.close.add(callback)
     }
 
+    function removeOnClose(callback: ICallback<CloseEvent>) {
+        socket.value.removeEventListener(eEvent.enum.close, callback)
+        callbacks.close.delete(callback)
+    }
+
     function onError(callback: ICallback) {
         socket.value.addEventListener(eEvent.enum.error, callback)
         callbacks.error.add(callback)
+    }
+
+    function removeOnError(callback: ICallback) {
+        socket.value.removeEventListener(eEvent.enum.error, callback)
+        callbacks.error.delete(callback)
     }
 
     return {
@@ -161,10 +186,15 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
         disconnect,
 
         onOpen,
+        removeOnOpen,
         onMessage,
+        removeOnMessage,
         onRawMessage,
+        removeOnRawMessage,
         onClose,
-        onError
+        removeOnClose,
+        onError,
+        removeOnError
     }
 }
 
