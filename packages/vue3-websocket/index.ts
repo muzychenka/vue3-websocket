@@ -19,10 +19,10 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
     const socket = ref<WebSocket>()
     const readyState = ref(EState.CONNECTING)
     const callbacks = reactive({
-        open: new Set<ICallback>([]),
-        message: new Set<ICallback<MessageEvent>>([]),
-        close: new Set<ICallback<CloseEvent>>([]),
-        error: new Set<ICallback>([])
+        open: new WeakSet<ICallback>([]),
+        message: new WeakSet<ICallback<MessageEvent>>([]),
+        close: new WeakSet<ICallback<CloseEvent>>([]),
+        error: new WeakSet<ICallback>([])
     })
 
     if (typeof arg1 === 'object') {
