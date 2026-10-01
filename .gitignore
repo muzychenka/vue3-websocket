@@ -3,3 +3,4 @@ packages/vue3-websocket/dist
 packages/vue3-websocket/sandbox/node_modules
 .nx
 lerna-debug.log
+.DS_Store

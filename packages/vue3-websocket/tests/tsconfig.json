@@ -1,0 +1,12 @@
+{
+    "compilerOptions": {
+        "strict": true,
+        "noEmit": true,
+        "lib": ["dom", "ES2019"],
+        "target": "ES2019",
+        "module": "commonjs",
+        "moduleResolution": "node",
+        "skipLibCheck": true
+    },
+    "files": ["types-compat.ts"]
+}
