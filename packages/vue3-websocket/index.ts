@@ -1,9 +1,46 @@
 import { ref, shallowRef, reactive, getCurrentScope, onScopeDispose } from 'vue'
-import { z } from 'zod'
-import type { IConnection, IConnectionOptions, TSendData } from './types'
+import type {
+    IConnection,
+    IConnectionOptions,
+    IHeartbeatOptions,
+    TSendData,
+    TSchema,
+    TSchemaInput,
+    ISafeParseSchema,
+    IStandardSchema
+} from './types'
 import { eEvent, EState, type TEvent, type ICallback, type IOptions } from './types'
-import { DEFAULT_RECONNECT_DELAY } from './constants'
-import { arg1Schema, arg2Schema } from './schemas'
+import { DEFAULT_RECONNECT_DELAY, STABLE_CONNECTION_TIME } from './constants'
+import { validateConnection, validateOptions } from './schemas'
+
+type TParsed = { ok: true; value: unknown } | { ok: false }
+type TRawData = string | ArrayBufferLike | Blob | ArrayBufferView
+
+const RAW_DATA_TAGS = [
+    '[object ArrayBuffer]',
+    '[object SharedArrayBuffer]',
+    '[object Blob]',
+    '[object File]'
+]
+
+function serialize(payload: TSendData): TRawData | undefined {
+    if (
+        typeof payload === 'string' ||
+        ArrayBuffer.isView(payload) ||
+        RAW_DATA_TAGS.includes(Object.prototype.toString.call(payload))
+    ) {
+        return payload as TRawData
+    }
+    return JSON.stringify(payload)
+}
+
+function validate(schema: TSchema, data: unknown): boolean | Promise<boolean> {
+    if (typeof (schema as ISafeParseSchema).safeParse === 'function') {
+        return (schema as ISafeParseSchema).safeParse(data).success
+    }
+    const result = (schema as IStandardSchema)['~standard'].validate(data)
+    return result instanceof Promise ? result.then((r) => !r.issues) : !result.issues
+}
 
 export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptions) {
     if (!arg1) {
@@ -24,13 +61,19 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
         close: new Set(),
         error: new Set()
     }
+    const parsedMessages = new WeakMap<MessageEvent, TParsed>()
+    const sendQueue: TRawData[] = []
 
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined
     let reconnectAttempt = 0
     let manuallyClosed = false
+    let openedAt: number | undefined
+    let heartbeatTimer: ReturnType<typeof setInterval> | undefined
+    let pongTimer: ReturnType<typeof setTimeout> | undefined
+    let listeningOnline = false
 
     if (typeof arg1 === 'object') {
-        arg1Schema.parse(arg1)
+        validateConnection(arg1)
         const { secured, host, path } = arg1
         options.connectionString = `${secured ? 'wss' : 'ws'}://${host}${
             path ? (path.startsWith('/') ? path : '/' + path) : ''
@@ -40,7 +83,7 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
     }
 
     if (typeof arg2 === 'object') {
-        arg2Schema.parse(arg2)
+        validateOptions(arg2)
     }
 
     const data = (typeof arg1 === 'string' ? arg2 : arg1) as Record<string, unknown> | undefined
@@ -73,6 +116,50 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
         reconnectTimer = setTimeout(reconnect, delay)
     }
 
+    function stopHeartbeat() {
+        clearInterval(heartbeatTimer)
+        clearTimeout(pongTimer)
+        heartbeatTimer = pongTimer = undefined
+    }
+
+    function startHeartbeat(ws: WebSocket, heartbeat: IHeartbeatOptions) {
+        stopHeartbeat()
+        heartbeatTimer = setInterval(() => {
+            if (ws !== socket.value || ws.readyState !== EState.OPEN) return
+            const { message = 'ping', timeout = heartbeat.interval } = heartbeat
+            const payload = serialize(typeof message === 'function' ? message() : message)
+            payload !== undefined && ws.send(payload)
+            if (pongTimer === undefined) {
+                pongTimer = setTimeout(() => {
+                    log('red', 'Heartbeat: no response, closing connection')
+                    stopHeartbeat()
+                    ws.close(4000, 'Heartbeat timeout')
+                }, timeout)
+            }
+        }, heartbeat.interval)
+    }
+
+    function flushQueue(ws: WebSocket) {
+        while (sendQueue.length && ws.readyState === EState.OPEN) {
+            ws.send(sendQueue.shift()!)
+        }
+    }
+
+    function onOnline() {
+        if (manuallyClosed || !options.reconnect || readyState.value !== EState.CLOSED) return
+        log('green', 'Network: online, reconnecting')
+        reconnectAttempt = 0
+        reconnect()
+    }
+
+    function listenOnline(enabled: boolean) {
+        if (typeof window === 'undefined' || enabled === listeningOnline) return
+        listeningOnline = enabled
+        enabled
+            ? window.addEventListener('online', onOnline)
+            : window.removeEventListener('online', onOnline)
+    }
+
     function forEachCallback(fn: (event: TEvent, callback: ICallback<any>) => void) {
         for (const event of eEvent.options) {
             callbacks[event].forEach((callback) => fn(event, callback))
@@ -81,6 +168,11 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
 
     function open() {
         clearReconnectTimer()
+
+        if (typeof WebSocket === 'undefined') {
+            log('orange', 'WebSocket is not available in this environment (SSR?)')
+            return
+        }
 
         const ws = new WebSocket(options.connectionString!, options.protocols)
 
@@ -93,20 +185,30 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
             }
         }
 
+        stopHeartbeat()
+        openedAt = undefined
         socket.value = ws
         readyState.value = EState.CONNECTING
 
         // Internal listeners go first, so user callbacks see the updated readyState
         ws.addEventListener(eEvent.enum.open, () => {
             if (ws !== socket.value) return
-            reconnectAttempt = 0
+            openedAt = Date.now()
             readyState.value = EState.OPEN
             log('green', 'Connection: opened')
+            flushQueue(ws)
+            options.heartbeat && startHeartbeat(ws, options.heartbeat)
         })
 
         ws.addEventListener(eEvent.enum.close, (event: CloseEvent) => {
             if (ws !== socket.value) return
             log('red', 'Connection: closed', event)
+            stopHeartbeat()
+            // Connections dropped right after opening still count as failed attempts
+            if (openedAt !== undefined && Date.now() - openedAt >= STABLE_CONNECTION_TIME) {
+                reconnectAttempt = 0
+            }
+            openedAt = undefined
             readyState.value = EState.CLOSED
             if (options.reconnect && !manuallyClosed) {
                 scheduleReconnect()
@@ -114,6 +216,8 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
         })
 
         ws.addEventListener(eEvent.enum.message, (message: MessageEvent) => {
+            clearTimeout(pongTimer)
+            pongTimer = undefined
             log('lightblue', 'Received message:', message.data)
         })
 
@@ -136,6 +240,7 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
     function connect() {
         manuallyClosed = false
         reconnectAttempt = 0
+        listenOnline(!!options.reconnectOnOnline)
         open()
     }
 
@@ -147,21 +252,43 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
         }
         manuallyClosed = true
         clearReconnectTimer()
+        stopHeartbeat()
+        listenOnline(false)
+        sendQueue.length = 0
     }
 
     function send(payload: TSendData): boolean {
-        const ws = socket.value
-        if (!ws || ws.readyState !== EState.OPEN) {
-            log('orange', 'Send skipped: connection is not open')
+        let raw: TRawData | undefined
+        try {
+            raw = serialize(payload)
+        } catch (e) {
+            console.error('[WebSocket] Failed to serialize message', e)
             return false
         }
-        const isRaw =
-            typeof payload === 'string' ||
-            payload instanceof ArrayBuffer ||
-            ArrayBuffer.isView(payload) ||
-            (typeof Blob !== 'undefined' && payload instanceof Blob)
-        ws.send(isRaw ? (payload as string) : JSON.stringify(payload))
-        return true
+        if (raw === undefined) {
+            return false
+        }
+
+        const ws = socket.value
+        if (ws && ws.readyState === EState.OPEN) {
+            try {
+                ws.send(raw)
+                return true
+            } catch (e) {
+                console.error('[WebSocket] Failed to send message', e)
+                return false
+            }
+        }
+
+        const limit = options.queue === true ? Infinity : Number(options.queue || 0)
+        if (limit > 0 && !manuallyClosed) {
+            sendQueue.push(raw)
+            sendQueue.length > limit && sendQueue.shift()
+            return true
+        }
+
+        log('orange', 'Send skipped: connection is not open')
+        return false
     }
 
     function subscribe(event: TEvent, callback: ICallback<any>) {
@@ -174,6 +301,26 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
         socket.value?.removeEventListener(event, callback)
     }
 
+    function parse(event: MessageEvent): TParsed {
+        try {
+            return { ok: true, value: JSON.parse(event.data) }
+        } catch {
+            return { ok: false }
+        }
+    }
+
+    function parseMessage(event: MessageEvent): TParsed {
+        if (!options.shareParsedMessages) {
+            return parse(event)
+        }
+        let parsed = parsedMessages.get(event)
+        if (!parsed) {
+            parsed = parse(event)
+            parsedMessages.set(event, parsed)
+        }
+        return parsed
+    }
+
     function onOpen(callback: ICallback) {
         subscribe(eEvent.enum.open, callback)
     }
@@ -183,24 +330,36 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
     }
 
     // The callback receives the raw (validated) JSON, so the type is inferred from the schema input
-    function onMessage<T = any>(
-        schema: z.ZodType<any, z.ZodTypeDef, T> | z.ZodTypeAny,
-        callback: (data: T) => void
+    function onMessage<T = never, S extends TSchema = TSchema>(
+        schema: S,
+        callback: (data: [T] extends [never] ? TSchemaInput<S> : T) => void
     ): ICallback<MessageEvent> {
-        const wrapper = function (event: MessageEvent) {
-            let data: T
-            try {
-                data = JSON.parse(event.data)
-            } catch {
-                return
-            }
-            if (!schema.safeParse(data).success) {
-                return
-            }
+        if (
+            !schema ||
+            (typeof (schema as ISafeParseSchema).safeParse !== 'function' &&
+                typeof (schema as IStandardSchema)['~standard']?.validate !== 'function')
+        ) {
+            throw new TypeError('[WebSocket] onMessage expects a zod or Standard Schema validator')
+        }
+
+        const run = (data: any) => {
             try {
                 callback(data)
             } catch (e) {
                 console.error(e)
+            }
+        }
+
+        const wrapper = function (event: MessageEvent) {
+            const parsed = parseMessage(event)
+            if (!parsed.ok) {
+                return
+            }
+            const valid = validate(schema, parsed.value)
+            if (valid === true) {
+                run(parsed.value)
+            } else if (valid !== false) {
+                valid.then((ok) => ok && run(parsed.value), console.error)
             }
         }
         subscribe(eEvent.enum.message, wrapper)
@@ -272,5 +431,8 @@ export {
     EState,
     IConnection,
     IConnectionOptions,
-    TSendData
+    IHeartbeatOptions,
+    TSendData,
+    TSchema,
+    TSchemaInput
 }

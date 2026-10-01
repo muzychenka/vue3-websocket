@@ -17,7 +17,9 @@ or
 npm i vue3-websocket
 ```
 
-You'll also need `vue` (3.2+) and `zod` (v3) to be installed — they are peer dependencies
+`vue` (3.2+) is a peer dependency. To validate incoming messages with `onMessage` you'll also need a schema library:
+[zod](https://zod.dev) v3/v4 or any [Standard Schema](https://standardschema.dev) compatible one (valibot, arktype, ...).
+zod is not bundled with the package anymore, so `onRawMessage`-only apps don't pay for it
 
 ```
 pnpm add zod
@@ -129,14 +131,49 @@ The type of incoming data can be inferred from the schema, so the generic argume
 onMessage(accountSchema, ({ name }) => console.log(name)) // name: string
 ```
 
+> [!NOTE]
+> The callback receives the validated raw JSON, not the schema output, so zod `transform`/`default` are not applied
+
+Any Standard Schema validator works too, including async ones
+
+```ts
+import * as v from 'valibot'
+
+onMessage(v.object({ name: v.string() }), ({ name }) => console.log(name))
+```
+
+With many `onMessage` subscribers on one connection, `shareParsedMessages: true` parses each message only once.
+All subscribers then receive the same object, so it must not be mutated
+
 Sending messages: strings, `Blob`, `ArrayBuffer` and typed arrays are sent as is, anything else is serialized with `JSON.stringify`.
-`send` returns `false` if the connection is not open
+`send` returns `false` if the message could not be sent (connection is not open, payload can't be serialized)
 
 ```ts
 const { send } = useWebSocket('ws://127.0.0.1:8000')
 
 send('ping')
 send({ type: 'subscribe', channel: 'news' })
+```
+
+Messages sent while the connection is not open can be buffered and flushed on open
+
+```ts
+const { send } = useWebSocket('ws://127.0.0.1:8000', {
+    queue: 100 // true for an unlimited buffer, a number to keep only the last N messages
+})
+```
+
+Heartbeat: pings the server periodically and reconnects if nothing comes back within `timeout`
+(any incoming message counts as a response)
+
+```ts
+useWebSocket('ws://127.0.0.1:8000', {
+    heartbeat: {
+        interval: 30000,
+        timeout: 10000, // default: interval
+        message: () => ({ type: 'ping' }) // default: 'ping'
+    }
+})
 ```
 
 Connecting automatically and closing the connection together with the component
@@ -156,9 +193,15 @@ Reconnect strategy
 ```ts
 useWebSocket('ws://127.0.0.1:8000', {
     reconnectAttempts: 10, // give up after 10 failed attempts in a row
-    reconnectBackoff: (attempt) => Math.min(1000 * 2 ** attempt, 30000) // exponential backoff
+    reconnectBackoff: (attempt) => Math.min(1000 * 2 ** attempt, 30000), // exponential backoff
+    reconnectOnOnline: true // reconnect right away when the browser goes back online
 })
 ```
+
+A connection that drops within 5 seconds after opening still counts as a failed attempt,
+so `reconnectAttempts` also stops endless loops when the server accepts and immediately closes the connection.
+
+On the server (SSR) `connect()` does nothing, so the composable can be safely used in universal apps.
 
 Connection options interfaces
 
@@ -179,6 +222,10 @@ interface IConnectionOptions {
     reconnectBackoff?: (attempt: number) => number // overrides reconnectDelay
     autoConnect?: boolean // default: false
     autoDisconnect?: boolean // default: false
+    reconnectOnOnline?: boolean // default: false
+    queue?: boolean | number // default: false
+    heartbeat?: { interval: number; timeout?: number; message?: TSendData | (() => TSendData) }
+    shareParsedMessages?: boolean // default: false
 }
 ```
 

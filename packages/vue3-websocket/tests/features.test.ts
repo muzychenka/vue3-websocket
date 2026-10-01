@@ -1,18 +1,33 @@
 import { effectScope } from 'vue'
 import { z } from 'zod'
+import { z as z4 } from 'zod4'
+import * as v from 'valibot'
 import WS from 'jest-websocket-mock'
-import { useWebSocket, EState } from '../'
+import { useWebSocket, EState, eEvent } from '../'
 import { IP } from './config'
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
+async function waitFor(check: () => boolean, timeout = 2000) {
+    const start = Date.now()
+    while (!check()) {
+        if (Date.now() - start > timeout) {
+            throw new Error('waitFor: timed out')
+        }
+        await wait(5)
+    }
+}
+
 let port = 9100
 let server: WS
 let uri: string
+let connections: number
 
 beforeEach(() => {
     uri = `ws://${IP}:${port++}`
     server = new WS(uri)
+    connections = 0
+    server.on('connection', () => connections++)
 })
 
 const instances: ReturnType<typeof useWebSocket>[] = []
@@ -32,27 +47,29 @@ function dropClients() {
     server.server.clients().forEach((client) => client.close())
 }
 
+async function connected(ws: ReturnType<typeof useWebSocket>) {
+    await waitFor(() => ws.readyState.value === EState.OPEN)
+}
+
 describe('subscriptions', () => {
     it('allows registering callbacks before connect()', async () => {
-        const { connect, onOpen } = useWs(uri, { debug: false, reconnect: false })
+        const ws = useWs(uri, { debug: false, reconnect: false })
         const opened = jest.fn()
 
-        expect(() => onOpen(opened)).not.toThrow()
-        connect()
-        await server.connected
-        await wait(0)
+        expect(() => ws.onOpen(opened)).not.toThrow()
+        ws.connect()
+        await connected(ws)
 
         expect(opened).toHaveBeenCalledTimes(1)
     })
 
     it('runs user callbacks after the internal state is updated', async () => {
-        const { connect, onOpen, readyState } = useWs(uri, { debug: false })
+        const ws = useWs(uri, { debug: false })
         let stateInCallback: EState | undefined
 
-        onOpen(() => (stateInCallback = readyState.value))
-        connect()
-        await server.connected
-        await wait(0)
+        ws.onOpen(() => (stateInCallback = ws.readyState.value))
+        ws.connect()
+        await connected(ws)
 
         expect(stateInCallback).toBe(EState.OPEN)
     })
@@ -67,14 +84,14 @@ describe('subscriptions', () => {
     })
 
     it('removes callbacks', async () => {
-        const { connect, onRawMessage, removeOnRawMessage } = useWs(uri, { debug: false })
+        const ws = useWs(uri, { debug: false })
         const received = jest.fn()
 
-        connect()
-        await server.connected
-        onRawMessage(received)
+        ws.connect()
+        await connected(ws)
+        ws.onRawMessage(received)
         server.send('a')
-        removeOnRawMessage(received)
+        ws.removeOnRawMessage(received)
         server.send('b')
 
         expect(received).toHaveBeenCalledTimes(1)
@@ -83,13 +100,12 @@ describe('subscriptions', () => {
 
 describe('onMessage', () => {
     it('passes only valid JSON matching the schema', async () => {
-        const { connect, onMessage } = useWs(uri, { debug: false })
-        const schema = z.object({ name: z.string() })
+        const ws = useWs(uri, { debug: false })
         const received = jest.fn()
 
-        connect()
-        await server.connected
-        onMessage(schema, (data) => received(data.name))
+        ws.connect()
+        await connected(ws)
+        ws.onMessage(z.object({ name: z.string() }), (data) => received(data.name))
 
         server.send('not json')
         server.send(JSON.stringify({ age: 1 }))
@@ -99,14 +115,86 @@ describe('onMessage', () => {
         expect(received).toHaveBeenCalledWith('John')
     })
 
-    it('can be removed via the returned wrapper', async () => {
-        const { connect, onMessage, removeOnMessage } = useWs(uri, { debug: false })
+    it.each([
+        ['zod 4', z4.object({ name: z4.string() })],
+        ['valibot (Standard Schema)', v.object({ name: v.string() })]
+    ])('supports %s', async (_, schema) => {
+        const ws = useWs(uri, { debug: false })
         const received = jest.fn()
 
-        connect()
-        await server.connected
-        const wrapper = onMessage(z.any(), received)
-        removeOnMessage(wrapper)
+        ws.connect()
+        await connected(ws)
+        ws.onMessage(schema, received)
+        server.send(JSON.stringify({ name: 1 }))
+        server.send(JSON.stringify({ name: 'John' }))
+
+        expect(received).toHaveBeenCalledTimes(1)
+        expect(received).toHaveBeenCalledWith({ name: 'John' })
+    })
+
+    it('supports async Standard Schema validators', async () => {
+        const ws = useWs(uri, { debug: false })
+        const received = jest.fn()
+        const schema = {
+            '~standard': {
+                validate: async (value: unknown) =>
+                    typeof value === 'number' ? { value } : { issues: ['not a number'] }
+            }
+        }
+
+        ws.connect()
+        await connected(ws)
+        ws.onMessage(schema, received)
+        server.send('"x"')
+        server.send('42')
+
+        await waitFor(() => received.mock.calls.length > 0)
+        await wait(10)
+        expect(received.mock.calls).toEqual([[42]])
+    })
+
+    it('throws for an invalid schema', () => {
+        const ws = useWs(uri, { debug: false })
+        expect(() => ws.onMessage({} as any, () => {})).toThrow(TypeError)
+    })
+
+    it('gives every subscriber its own copy by default', async () => {
+        const ws = useWs(uri, { debug: false })
+        const second = jest.fn()
+
+        ws.connect()
+        await connected(ws)
+        ws.onMessage(z.any(), (data) => delete data.name)
+        ws.onMessage(z.object({ name: z.string() }), second)
+        server.send('{"name":"John"}')
+
+        expect(second).toHaveBeenCalledWith({ name: 'John' })
+    })
+
+    it('parses each message once with shareParsedMessages', async () => {
+        const ws = useWs(uri, { debug: false, shareParsedMessages: true })
+        const received = jest.fn()
+
+        ws.connect()
+        await connected(ws)
+        ws.onMessage(z.any(), received)
+        ws.onMessage(z.any(), received)
+        ws.onMessage(z.any(), received)
+
+        const parse = jest.spyOn(JSON, 'parse')
+        server.send('{"x":1}')
+        expect(parse).toHaveBeenCalledTimes(1)
+        expect(received).toHaveBeenCalledTimes(3)
+        parse.mockRestore()
+    })
+
+    it('can be removed via the returned wrapper', async () => {
+        const ws = useWs(uri, { debug: false })
+        const received = jest.fn()
+
+        ws.connect()
+        await connected(ws)
+        ws.removeOnMessage(ws.onMessage(z.any(), received))
         server.send('{}')
 
         expect(received).not.toHaveBeenCalled()
@@ -115,90 +203,184 @@ describe('onMessage', () => {
 
 describe('reconnect', () => {
     it('reconnects and re-attaches callbacks', async () => {
-        const { connect, onRawMessage } = useWs(uri, { debug: false, reconnectDelay: 10 })
+        const ws = useWs(uri, { debug: false, reconnectDelay: 10 })
         const received = jest.fn()
 
-        onRawMessage(received)
-        connect()
-        await server.connected
+        ws.onRawMessage(received)
+        ws.connect()
+        await connected(ws)
         dropClients()
-        await wait(50)
+        await waitFor(() => connections === 2 && ws.readyState.value === EState.OPEN)
 
-        expect(server.server.clients()).toHaveLength(1)
         server.send('hello')
         expect(received).toHaveBeenCalledTimes(1)
     })
 
     it('does not reconnect after disconnect()', async () => {
-        const { connect, disconnect, readyState } = useWs(uri, {
-            debug: false,
-            reconnectDelay: 10
-        })
+        const ws = useWs(uri, { debug: false, reconnectDelay: 10 })
 
-        connect()
-        await server.connected
-        disconnect()
+        ws.connect()
+        await connected(ws)
+        ws.disconnect()
         await server.closed
         await wait(50)
 
-        expect(readyState.value).toBe(EState.CLOSED)
-        expect(server.server.clients()).toHaveLength(0)
+        expect(ws.readyState.value).toBe(EState.CLOSED)
+        expect(connections).toBe(1)
     })
 
     it('respects reconnectAttempts and reconnectBackoff', async () => {
         const backoff = jest.fn(() => 5)
-        const { connect } = useWs(uri, {
-            debug: false,
-            reconnectAttempts: 2,
-            reconnectBackoff: backoff
-        })
+        const ws = useWs(uri, { debug: false, reconnectAttempts: 2, reconnectBackoff: backoff })
 
-        connect()
-        await server.connected
+        ws.connect()
+        await connected(ws)
         server.close()
         await wait(100)
 
         expect(backoff.mock.calls).toEqual([[1], [2]])
     })
 
+    it('counts connections dropped right after opening as failed attempts', async () => {
+        server.on('connection', (client) => client.close())
+        const ws = useWs(uri, { debug: false, reconnectAttempts: 2, reconnectDelay: 5 })
+
+        ws.connect()
+        await wait(150)
+
+        expect(connections).toBe(3)
+    })
+
     it('does not leak sockets when connect() is called twice', async () => {
-        const { connect, onRawMessage } = useWs(uri, { debug: false, reconnectDelay: 10 })
+        const ws = useWs(uri, { debug: false, reconnectDelay: 10 })
         const received = jest.fn()
 
-        onRawMessage(received)
-        connect()
-        connect()
-        await wait(50)
+        ws.onRawMessage(received)
+        ws.connect()
+        ws.connect()
+        await connected(ws)
+        await wait(20)
 
         expect(server.server.clients()).toHaveLength(1)
         server.send('hello')
         expect(received).toHaveBeenCalledTimes(1)
     })
+
+    it('reconnects immediately when the browser goes online', async () => {
+        const ws = useWs(uri, { debug: false, reconnectDelay: 60000, reconnectOnOnline: true })
+
+        ws.connect()
+        await connected(ws)
+        dropClients()
+        await waitFor(() => ws.readyState.value === EState.CLOSED)
+        window.dispatchEvent(new Event('online'))
+
+        await waitFor(() => connections === 2)
+    })
+
+    it('reconnects when the heartbeat gets no response', async () => {
+        const ws = useWs(uri, { debug: false, reconnectDelay: 5, heartbeat: { interval: 20 } })
+
+        ws.connect()
+        await connected(ws)
+        await expect(server).toReceiveMessage('ping')
+
+        await waitFor(() => connections === 2)
+    })
+
+    it('keeps the connection while the server answers heartbeats', async () => {
+        server.on('connection', (client) => client.on('message', () => client.send('pong')))
+        const ws = useWs(uri, {
+            debug: false,
+            reconnectDelay: 5,
+            heartbeat: { interval: 10, timeout: 30, message: () => ({ type: 'ping' }) }
+        })
+
+        ws.connect()
+        await connected(ws)
+        await expect(server).toReceiveMessage('{"type":"ping"}')
+        await wait(100)
+
+        expect(connections).toBe(1)
+    })
 })
 
 describe('send', () => {
-    it('sends strings as is and serializes objects', async () => {
-        const { connect, send } = useWs(uri, { debug: false })
+    it('sends strings and binary data as is and serializes objects', async () => {
+        const ws = useWs(uri, { debug: false })
 
-        connect()
-        await server.connected
-        await wait(0)
+        ws.connect()
+        await connected(ws)
+        const spy = jest.spyOn(ws.socket.value!, 'send')
 
-        expect(send('raw')).toBe(true)
-        await expect(server).toReceiveMessage('raw')
-        expect(send({ a: 1 })).toBe(true)
-        await expect(server).toReceiveMessage('{"a":1}')
+        expect(ws.send('raw')).toBe(true)
+        expect(ws.send({ a: 1 })).toBe(true)
+        const buffer = new SharedArrayBuffer(4)
+        ws.send(buffer)
+
+        expect(spy.mock.calls).toEqual([['raw'], ['{"a":1}'], [buffer]])
     })
 
     it('returns false when the connection is not open', () => {
-        const { send } = useWs(uri, { debug: false })
-        expect(send('x')).toBe(false)
+        const ws = useWs(uri, { debug: false })
+        expect(ws.send('x')).toBe(false)
+    })
+
+    it('returns false when the payload cannot be serialized', async () => {
+        const ws = useWs(uri, { debug: false })
+        const circular: Record<string, unknown> = {}
+        circular.self = circular
+        const error = jest.spyOn(console, 'error').mockImplementation(() => {})
+
+        ws.connect()
+        await connected(ws)
+
+        expect(ws.send(circular)).toBe(false)
+        expect(ws.send({ big: BigInt(1) })).toBe(false)
+        error.mockRestore()
+    })
+
+    it('queues messages until the connection opens', async () => {
+        const ws = useWs(uri, { debug: false, queue: true })
+
+        expect(ws.send('first')).toBe(true)
+        expect(ws.send({ n: 2 })).toBe(true)
+        ws.connect()
+
+        await expect(server).toReceiveMessage('first')
+        await expect(server).toReceiveMessage('{"n":2}')
+    })
+
+    it('drops the oldest queued messages over the limit', async () => {
+        const ws = useWs(uri, { debug: false, queue: 1 })
+        const received: unknown[] = []
+        server.on('connection', (client) => client.on('message', (m) => received.push(m)))
+
+        ws.send('a')
+        ws.send('b')
+        ws.connect()
+        await connected(ws)
+        await wait(10)
+
+        expect(received).toEqual(['b'])
+    })
+
+    it('clears the queue on disconnect()', () => {
+        const ws = useWs(uri, { debug: false, queue: true })
+        ws.disconnect()
+        expect(ws.send('x')).toBe(false)
     })
 })
 
 describe('options', () => {
     it('accepts protocols array in the object form', () => {
         expect(() => useWs({ host: `${IP}:1`, protocols: ['a', 'b'], debug: false })).not.toThrow()
+    })
+
+    it('validates options', () => {
+        expect(() => useWs(uri, { reconnectDelay: '1' as any })).toThrow(TypeError)
+        expect(() => useWs({ host: 1 as any })).toThrow(TypeError)
+        expect(() => useWs(uri, { heartbeat: {} as any })).toThrow(TypeError)
     })
 
     it('builds the connection string from the object form', () => {
@@ -222,12 +404,35 @@ describe('options', () => {
             })
         )!
 
-        await server.connected
+        await connected(ws)
         scope.stop()
         await server.closed
         await wait(50)
 
         expect(ws.readyState.value).toBe(EState.CLOSED)
-        expect(server.server.clients()).toHaveLength(0)
+        expect(connections).toBe(1)
+    })
+
+    it('does nothing without WebSocket support (SSR)', () => {
+        const original = global.WebSocket
+        delete (global as any).WebSocket
+        try {
+            const ws = useWs(uri, { debug: false })
+            expect(() => ws.connect()).not.toThrow()
+            expect(ws.socket.value).toBeUndefined()
+        } finally {
+            global.WebSocket = original
+        }
+    })
+})
+
+describe('eEvent', () => {
+    it('keeps the former zod enum API', () => {
+        expect(eEvent.enum.open).toBe('open')
+        expect(eEvent.Enum.message).toBe('message')
+        expect(eEvent.options).toEqual(['open', 'close', 'message', 'error'])
+        expect(eEvent.parse('close')).toBe('close')
+        expect(eEvent.safeParse('nope').success).toBe(false)
+        expect(() => eEvent.parse('nope')).toThrow()
     })
 })

@@ -4,6 +4,7 @@
     "description": "Simple package for implementing WebSocket into your Vue 3 application",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
+    "module": "dist/esm/index.js",
     "keywords": [
         "vue3",
         "vue",
@@ -14,27 +15,34 @@
     "sideEffects": false,
     "peerDependencies": {
         "vue": "^3.2.0",
-        "zod": "^3.20.0"
+        "zod": "^3.20.0 || ^4.0.0"
+    },
+    "peerDependenciesMeta": {
+        "zod": {
+            "optional": true
+        }
     },
     "devDependencies": {
         "@types/jest": "^29.5.12",
-        "@types/node": "^20.12.8",
+        "@types/node": "^20.19.0",
         "@types/ws": "^8.5.10",
         "jest": "^29.7.0",
         "jest-environment-jsdom": "^29.7.0",
         "jest-websocket-mock": "^2.5.0",
         "lerna": "^8.1.2",
-        "ts-jest": "^29.1.2",
-        "ts-node": "^8.10.2",
-        "typescript": "~5.4.5",
-        "vue": "^3.4.26",
+        "ts-jest": "^29.4.14",
+        "ts-node": "^10.9.2",
+        "typescript": "~5.9.3",
+        "valibot": "^1.0.0",
+        "vue": "^3.5.0",
         "ws": "^8.17.0",
-        "zod": "^3.23.6"
+        "zod": "^3.25.76",
+        "zod4": "npm:zod@^4.0.0"
     },
     "scripts": {
-        "build": "tsc --declaration",
+        "build": "tsc --declaration && tsc --declaration -p tsconfig.esm.json",
         "test": "jest test && pnpm run test:types",
-        "test:types": "tsc --noEmit --strict --lib dom,ES2019 --target ES2019 --module commonjs --moduleResolution node tests/types-compat.ts"
+        "test:types": "tsc --noEmit -p tests/tsconfig.json"
     },
     "repository": {
         "type": "git",

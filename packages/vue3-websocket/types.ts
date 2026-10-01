@@ -1,7 +1,31 @@
-import { z } from 'zod'
+const events = ['open', 'close', 'message', 'error'] as const
 
-export const eEvent = z.enum(['open', 'close', 'message', 'error'])
-export type TEvent = z.infer<typeof eEvent>
+export type TEvent = (typeof events)[number]
+
+type TEventMap = { [K in TEvent]: K }
+
+/**
+ * Lightweight replacement for the former `z.enum([...])`, keeping its commonly used API,
+ * so zod is no longer required at runtime
+ */
+export const eEvent = {
+    options: events as unknown as TEvent[],
+    enum: { open: 'open', close: 'close', message: 'message', error: 'error' } as TEventMap,
+    Enum: { open: 'open', close: 'close', message: 'message', error: 'error' } as TEventMap,
+    Values: { open: 'open', close: 'close', message: 'message', error: 'error' } as TEventMap,
+    safeParse(value: unknown): { success: true; data: TEvent } | { success: false } {
+        return (events as readonly unknown[]).includes(value)
+            ? { success: true, data: value as TEvent }
+            : { success: false }
+    },
+    parse(value: unknown): TEvent {
+        const result = eEvent.safeParse(value)
+        if (!result.success) {
+            throw new Error(`Invalid event: expected one of ${events.join(', ')}`)
+        }
+        return result.data
+    }
+}
 
 export enum EState {
     CONNECTING = 0,
@@ -17,6 +41,15 @@ export interface IConnection extends IConnectionOptions {
     debug?: boolean
 }
 
+export interface IHeartbeatOptions {
+    /** Ping interval (ms) */
+    interval: number
+    /** Ping payload. Default: 'ping' */
+    message?: TSendData | (() => TSendData)
+    /** Reconnect if no message arrives within this time (ms) after a ping. Default: interval */
+    timeout?: number
+}
+
 export interface IConnectionOptions {
     debug?: boolean
     reconnect?: boolean
@@ -26,10 +59,21 @@ export interface IConnectionOptions {
     reconnectAttempts?: number
     /** Custom delay (ms) for the given reconnect attempt (starting from 1). Overrides reconnectDelay */
     reconnectBackoff?: (attempt: number) => number
+    /** Reconnect immediately when the browser goes back online */
+    reconnectOnOnline?: boolean
     /** Call connect() right away */
     autoConnect?: boolean
     /** Call disconnect() when the current effect scope (e.g. component) is disposed */
     autoDisconnect?: boolean
+    /** Buffer send() calls while not connected and flush them on open. A number limits the buffer size */
+    queue?: boolean | number
+    /** Send pings periodically and reconnect if the server stops responding */
+    heartbeat?: IHeartbeatOptions
+    /**
+     * Parse each incoming message once for all onMessage subscribers.
+     * Faster with many subscribers, but they receive the same object, so it must not be mutated
+     */
+    shareParsedMessages?: boolean
 }
 
 export interface IOptions extends Omit<
@@ -47,3 +91,26 @@ export interface ICallback<T = Event> {
 }
 
 export type TSendData = string | ArrayBufferLike | Blob | ArrayBufferView | object
+
+/** Any schema with zod-like `safeParse` (zod 3/4, ...) */
+export interface ISafeParseSchema {
+    safeParse(data: unknown): { success: boolean }
+}
+
+/** Standard Schema (https://standardschema.dev): zod 3.24+/4, valibot, arktype, ... */
+export interface IStandardSchema {
+    readonly '~standard': {
+        validate(value: unknown): { issues?: unknown } | Promise<{ issues?: unknown }>
+    }
+}
+
+export type TSchema = ISafeParseSchema | IStandardSchema
+
+/** Type of the data a schema accepts (the raw JSON passed to onMessage callbacks) */
+export type TSchemaInput<S> = S extends { '~standard': { types?: infer Types } }
+    ? NonNullable<Types> extends { input: infer Input }
+        ? Input
+        : TLegacyInput<S>
+    : TLegacyInput<S>
+
+type TLegacyInput<S> = S extends { _input: infer Input } ? Input : unknown
