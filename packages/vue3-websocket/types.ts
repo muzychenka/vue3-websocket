@@ -2,26 +2,33 @@ const events = ['open', 'close', 'message', 'error'] as const
 
 export type TEvent = (typeof events)[number]
 
-type TEventMap = { [K in TEvent]: K }
+type TEventMap = { readonly [K in TEvent]: K }
+
+const eventMap = Object.freeze(
+    Object.fromEntries(events.map((event) => [event, event]))
+) as TEventMap
 
 /**
  * Lightweight replacement for the former `z.enum([...])`, keeping its commonly used API,
  * so zod is no longer required at runtime
  */
 export const eEvent = {
-    options: events as unknown as TEvent[],
-    enum: { open: 'open', close: 'close', message: 'message', error: 'error' } as TEventMap,
-    Enum: { open: 'open', close: 'close', message: 'message', error: 'error' } as TEventMap,
-    Values: { open: 'open', close: 'close', message: 'message', error: 'error' } as TEventMap,
-    safeParse(value: unknown): { success: true; data: TEvent } | { success: false } {
+    options: [...events] as ['open', 'close', 'message', 'error'],
+    enum: eventMap,
+    Enum: eventMap,
+    Values: eventMap,
+    safeParse(value: unknown): { success: true; data: TEvent } | { success: false; error: Error } {
         return (events as readonly unknown[]).includes(value)
             ? { success: true, data: value as TEvent }
-            : { success: false }
+            : {
+                  success: false,
+                  error: new Error(`Invalid event: expected one of ${events.join(', ')}`)
+              }
     },
     parse(value: unknown): TEvent {
         const result = eEvent.safeParse(value)
-        if (!result.success) {
-            throw new Error(`Invalid event: expected one of ${events.join(', ')}`)
+        if ('error' in result) {
+            throw result.error
         }
         return result.data
     }

@@ -8,10 +8,10 @@ import type {
     TSchemaInput,
     ISafeParseSchema,
     IStandardSchema
-} from './types'
-import { eEvent, EState, type TEvent, type ICallback, type IOptions } from './types'
-import { DEFAULT_RECONNECT_DELAY, STABLE_CONNECTION_TIME } from './constants'
-import { validateConnection, validateOptions } from './schemas'
+} from './types.js'
+import { eEvent, EState, type TEvent, type ICallback, type IOptions } from './types.js'
+import { DEFAULT_RECONNECT_DELAY, STABLE_CONNECTION_TIME } from './constants.js'
+import { validateConnection, validateOptions } from './schemas.js'
 
 type TParsed = { ok: true; value: unknown } | { ok: false }
 type TRawData = string | ArrayBufferLike | Blob | ArrayBufferView
@@ -71,6 +71,7 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
     let heartbeatTimer: ReturnType<typeof setInterval> | undefined
     let pongTimer: ReturnType<typeof setTimeout> | undefined
     let listeningOnline = false
+    let detachSocket: (() => void) | undefined
 
     if (typeof arg1 === 'object') {
         validateConnection(arg1)
@@ -86,11 +87,14 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
         validateOptions(arg2)
     }
 
-    const data = (typeof arg1 === 'string' ? arg2 : arg1) as Record<string, unknown> | undefined
+    // In the object form, options from arg1 take precedence over arg2
+    const sources = typeof arg1 === 'string' ? [arg2] : [arg2, arg1]
 
-    for (const [key, value] of Object.entries(data || {})) {
-        if (value !== undefined) {
-            ;(options as Record<string, unknown>)[key] = value
+    for (const source of sources) {
+        for (const [key, value] of Object.entries(source || {})) {
+            if (value !== undefined) {
+                ;(options as Record<string, unknown>)[key] = value
+            }
         }
     }
 
@@ -130,17 +134,25 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
             const payload = serialize(typeof message === 'function' ? message() : message)
             payload !== undefined && ws.send(payload)
             if (pongTimer === undefined) {
-                pongTimer = setTimeout(() => {
-                    log('red', 'Heartbeat: no response, closing connection')
-                    stopHeartbeat()
-                    ws.close(4000, 'Heartbeat timeout')
-                }, timeout)
+                pongTimer = setTimeout(() => dropDeadSocket(ws), timeout)
             }
         }, heartbeat.interval)
     }
 
+    // A dead connection may take a minute to fire 'close', so don't wait for it
+    function dropDeadSocket(ws: WebSocket) {
+        log('red', 'Heartbeat: no response, reconnecting')
+        const event =
+            typeof CloseEvent === 'function'
+                ? new CloseEvent('close', { code: 4000, reason: 'Heartbeat timeout' })
+                : new Event('close')
+        releaseSocket(4000, 'Heartbeat timeout')
+        handleClose(event)
+        callbacks.close.forEach((callback) => callback.call(ws, event))
+    }
+
     function flushQueue(ws: WebSocket) {
-        while (sendQueue.length && ws.readyState === EState.OPEN) {
+        while (sendQueue.length && ws === socket.value && ws.readyState === EState.OPEN) {
             ws.send(sendQueue.shift()!)
         }
     }
@@ -166,6 +178,31 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
         }
     }
 
+    /** Detaches all listeners from the current socket and closes it if it's still alive */
+    function releaseSocket(code?: number, reason?: string) {
+        const ws = socket.value
+        if (!ws) return
+        detachSocket?.()
+        detachSocket = undefined
+        if (ws.readyState === EState.CONNECTING || ws.readyState === EState.OPEN) {
+            ws.close(code, reason)
+        }
+    }
+
+    function handleClose(event: Event) {
+        log('red', 'Connection: closed', event)
+        stopHeartbeat()
+        // Connections dropped right after opening still count as failed attempts
+        if (openedAt !== undefined && Date.now() - openedAt >= STABLE_CONNECTION_TIME) {
+            reconnectAttempt = 0
+        }
+        openedAt = undefined
+        readyState.value = EState.CLOSED
+        if (options.reconnect && !manuallyClosed) {
+            scheduleReconnect()
+        }
+    }
+
     function open() {
         clearReconnectTimer()
 
@@ -177,55 +214,44 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
         const ws = new WebSocket(options.connectionString!, options.protocols)
 
         // Drop the previous connection, so repeated connect() calls don't leak sockets
-        const previous = socket.value
-        if (previous) {
-            forEachCallback((event, callback) => previous.removeEventListener(event, callback))
-            if (previous.readyState === EState.CONNECTING || previous.readyState === EState.OPEN) {
-                previous.close()
-            }
-        }
-
+        releaseSocket()
         stopHeartbeat()
         openedAt = undefined
         socket.value = ws
         readyState.value = EState.CONNECTING
 
+        const internal: { [K in TEvent]: (event: any) => void } = {
+            open() {
+                openedAt = Date.now()
+                readyState.value = EState.OPEN
+                log('green', 'Connection: opened')
+                options.heartbeat && startHeartbeat(ws, options.heartbeat)
+                // Flush after all onOpen callbacks (e.g. authentication) have run
+                sendQueue.length && setTimeout(() => flushQueue(ws))
+            },
+            close: handleClose,
+            message(message: MessageEvent) {
+                clearTimeout(pongTimer)
+                pongTimer = undefined
+                log('lightblue', 'Received message:', message.data)
+            },
+            error(error: Event) {
+                options.debug && console.error('%c[WebSocket] ', 'color: red', 'Error: ', error)
+            }
+        }
+
         // Internal listeners go first, so user callbacks see the updated readyState
-        ws.addEventListener(eEvent.enum.open, () => {
-            if (ws !== socket.value) return
-            openedAt = Date.now()
-            readyState.value = EState.OPEN
-            log('green', 'Connection: opened')
-            flushQueue(ws)
-            options.heartbeat && startHeartbeat(ws, options.heartbeat)
-        })
-
-        ws.addEventListener(eEvent.enum.close, (event: CloseEvent) => {
-            if (ws !== socket.value) return
-            log('red', 'Connection: closed', event)
-            stopHeartbeat()
-            // Connections dropped right after opening still count as failed attempts
-            if (openedAt !== undefined && Date.now() - openedAt >= STABLE_CONNECTION_TIME) {
-                reconnectAttempt = 0
-            }
-            openedAt = undefined
-            readyState.value = EState.CLOSED
-            if (options.reconnect && !manuallyClosed) {
-                scheduleReconnect()
-            }
-        })
-
-        ws.addEventListener(eEvent.enum.message, (message: MessageEvent) => {
-            clearTimeout(pongTimer)
-            pongTimer = undefined
-            log('lightblue', 'Received message:', message.data)
-        })
-
-        ws.addEventListener(eEvent.enum.error, (error: Event) => {
-            options.debug && console.error('%c[WebSocket] ', 'color: red', 'Error: ', error)
-        })
-
+        for (const event of eEvent.options) {
+            ws.addEventListener(event, internal[event])
+        }
         forEachCallback((event, callback) => ws.addEventListener(event, callback))
+
+        detachSocket = () => {
+            for (const event of eEvent.options) {
+                ws.removeEventListener(event, internal[event])
+            }
+            forEachCallback((event, callback) => ws.removeEventListener(event, callback))
+        }
     }
 
     function reconnect() {
@@ -359,7 +385,10 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
             if (valid === true) {
                 run(parsed.value)
             } else if (valid !== false) {
-                valid.then((ok) => ok && run(parsed.value), console.error)
+                valid.then(
+                    (ok) => ok && callbacks.message.has(wrapper) && run(parsed.value),
+                    console.error
+                )
             }
         }
         subscribe(eEvent.enum.message, wrapper)

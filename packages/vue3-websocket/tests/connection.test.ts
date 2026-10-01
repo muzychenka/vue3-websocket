@@ -1,4 +1,4 @@
-import { useWebSocket } from '../'
+import { useWebSocket } from '../index'
 import { IP, PORT } from './config'
 import WS from 'jest-websocket-mock'
 

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { useWebSocket } from '../'
+import { useWebSocket } from '../index'
 const { onMessage, removeOnMessage, socket } = useWebSocket('ws://x', { protocols: ['a'] })
 const accountSchema = z.object({ name: z.string() })
 type TAccount = z.infer<typeof accountSchema>

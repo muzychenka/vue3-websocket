@@ -40,7 +40,7 @@
         "zod4": "npm:zod@^4.0.0"
     },
     "scripts": {
-        "build": "tsc --declaration && tsc --declaration -p tsconfig.esm.json",
+        "build": "tsc --declaration && tsc -p tsconfig.esm.json",
         "test": "jest test && pnpm run test:types",
         "test:types": "tsc --noEmit -p tests/tsconfig.json"
     },

@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { z as z4 } from 'zod4'
 import * as v from 'valibot'
 import WS from 'jest-websocket-mock'
-import { useWebSocket, EState, eEvent } from '../'
+import { useWebSocket, EState, eEvent } from '../index'
 import { IP } from './config'
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -288,6 +288,19 @@ describe('reconnect', () => {
         await waitFor(() => connections === 2)
     })
 
+    it('fires onClose on heartbeat timeout without waiting for the close handshake', async () => {
+        const ws = useWs(uri, { debug: false, reconnect: false, heartbeat: { interval: 20 } })
+        const closed = jest.fn()
+
+        ws.onClose((event) => closed(event.code))
+        ws.connect()
+        await connected(ws)
+        await waitFor(() => closed.mock.calls.length > 0)
+
+        expect(closed.mock.calls).toEqual([[4000]])
+        expect(ws.readyState.value).toBe(EState.CLOSED)
+    })
+
     it('keeps the connection while the server answers heartbeats', async () => {
         server.on('connection', (client) => client.on('message', () => client.send('pong')))
         const ws = useWs(uri, {
@@ -351,6 +364,19 @@ describe('send', () => {
         await expect(server).toReceiveMessage('{"n":2}')
     })
 
+    it('flushes the queue after onOpen callbacks', async () => {
+        const ws = useWs(uri, { debug: false, queue: true })
+        const received: unknown[] = []
+        server.on('connection', (client) => client.on('message', (m) => received.push(m)))
+
+        ws.onOpen(() => ws.send('auth'))
+        ws.send('queued')
+        ws.connect()
+        await waitFor(() => received.length === 2)
+
+        expect(received).toEqual(['auth', 'queued'])
+    })
+
     it('drops the oldest queued messages over the limit', async () => {
         const ws = useWs(uri, { debug: false, queue: 1 })
         const received: unknown[] = []
@@ -381,6 +407,12 @@ describe('options', () => {
         expect(() => useWs(uri, { reconnectDelay: '1' as any })).toThrow(TypeError)
         expect(() => useWs({ host: 1 as any })).toThrow(TypeError)
         expect(() => useWs(uri, { heartbeat: {} as any })).toThrow(TypeError)
+    })
+
+    it('applies the second argument in the object form', () => {
+        const { options } = useWs({ host: 'example.com', debug: false }, { reconnectDelay: 5 })
+        expect(options.reconnectDelay).toBe(5)
+        expect(options.debug).toBe(false)
     })
 
     it('builds the connection string from the object form', () => {
