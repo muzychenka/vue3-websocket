@@ -301,6 +301,30 @@ describe('reconnect', () => {
         expect(ws.readyState.value).toBe(EState.CLOSED)
     })
 
+    it('runs every onClose callback on heartbeat timeout even if one throws', async () => {
+        const ws = useWs(uri, { debug: false, reconnect: false, heartbeat: { interval: 20 } })
+        const error = jest.spyOn(console, 'error').mockImplementation(() => {})
+        const second = jest.fn()
+
+        ws.onClose(() => {
+            throw new Error('boom')
+        })
+        ws.onClose(second)
+        ws.connect()
+        await connected(ws)
+        await waitFor(() => second.mock.calls.length > 0)
+
+        // Callbacks added after the timeout are not attached to the dead socket
+        const late = jest.fn()
+        ws.onClose(late)
+        server.server.clients().forEach((client) => client.close())
+        await wait(20)
+
+        expect(second).toHaveBeenCalledTimes(1)
+        expect(late).not.toHaveBeenCalled()
+        error.mockRestore()
+    })
+
     it('keeps the connection while the server answers heartbeats', async () => {
         server.on('connection', (client) => client.on('message', () => client.send('pong')))
         const ws = useWs(uri, {
@@ -375,6 +399,19 @@ describe('send', () => {
         await waitFor(() => received.length === 2)
 
         expect(received).toEqual(['auth', 'queued'])
+    })
+
+    it('keeps the order of messages sent while the queue is being flushed', async () => {
+        const ws = useWs(uri, { debug: false, queue: true })
+        const received: unknown[] = []
+        server.on('connection', (client) => client.on('message', (m) => received.push(m)))
+
+        ws.send('a')
+        ws.onOpen(() => Promise.resolve().then(() => ws.send('b')))
+        ws.connect()
+        await waitFor(() => received.length === 2)
+
+        expect(received).toEqual(['a', 'b'])
     })
 
     it('drops the oldest queued messages over the limit', async () => {

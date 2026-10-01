@@ -148,13 +148,25 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
                 : new Event('close')
         releaseSocket(4000, 'Heartbeat timeout')
         handleClose(event)
-        callbacks.close.forEach((callback) => callback.call(ws, event))
+        runCallbacks(ws, eEvent.enum.close, event)
     }
 
-    function flushQueue(ws: WebSocket) {
-        while (sendQueue.length && ws === socket.value && ws.readyState === EState.OPEN) {
-            ws.send(sendQueue.shift()!)
+    function runCallbacks(ws: WebSocket, event: TEvent, payload: Event) {
+        callbacks[event].forEach((callback) => {
+            try {
+                callback.call(ws, payload)
+            } catch (e) {
+                console.error(e)
+            }
+        })
+    }
+
+    function flushQueue(ws: WebSocket, messages: TRawData[]) {
+        while (messages.length && ws.readyState === EState.OPEN) {
+            ws.send(messages.shift()!)
         }
+        // The connection dropped mid-flush: keep the rest for the next one
+        manuallyClosed || sendQueue.unshift(...messages)
     }
 
     function onOnline() {
@@ -172,9 +184,11 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
             : window.removeEventListener('online', onOnline)
     }
 
+    // onOpen callbacks are called by the internal open handler, so they aren't attached to sockets
     function forEachCallback(fn: (event: TEvent, callback: ICallback<any>) => void) {
         for (const event of eEvent.options) {
-            callbacks[event].forEach((callback) => fn(event, callback))
+            event !== eEvent.enum.open &&
+                callbacks[event].forEach((callback) => fn(event, callback))
         }
     }
 
@@ -221,13 +235,15 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
         readyState.value = EState.CONNECTING
 
         const internal: { [K in TEvent]: (event: any) => void } = {
-            open() {
+            open(event: Event) {
                 openedAt = Date.now()
                 readyState.value = EState.OPEN
                 log('green', 'Connection: opened')
                 options.heartbeat && startHeartbeat(ws, options.heartbeat)
-                // Flush after all onOpen callbacks (e.g. authentication) have run
-                sendQueue.length && setTimeout(() => flushQueue(ws))
+                // Messages sent from onOpen callbacks (e.g. authentication) go before the queued ones
+                const queued = sendQueue.splice(0)
+                runCallbacks(ws, eEvent.enum.open, event)
+                flushQueue(ws, queued)
             },
             close: handleClose,
             message(message: MessageEvent) {
@@ -296,7 +312,8 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
         }
 
         const ws = socket.value
-        if (ws && ws.readyState === EState.OPEN) {
+        // While queued messages wait for the flush, new ones go after them to keep the order
+        if (ws && ws.readyState === EState.OPEN && !sendQueue.length) {
             try {
                 ws.send(raw)
                 return true
@@ -319,12 +336,15 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
 
     function subscribe(event: TEvent, callback: ICallback<any>) {
         callbacks[event].add(callback)
-        socket.value?.addEventListener(event, callback)
+        // A released (dead) socket gets no new listeners
+        if (event !== eEvent.enum.open && detachSocket) {
+            socket.value?.addEventListener(event, callback)
+        }
     }
 
     function unsubscribe(event: TEvent, callback: ICallback<any>) {
         callbacks[event].delete(callback)
-        socket.value?.removeEventListener(event, callback)
+        event !== eEvent.enum.open && socket.value?.removeEventListener(event, callback)
     }
 
     function parse(event: MessageEvent): TParsed {
