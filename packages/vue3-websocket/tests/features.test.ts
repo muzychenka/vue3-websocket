@@ -565,4 +565,21 @@ describe('robustness', () => {
         await wait(60)
         expect(closed).not.toHaveBeenCalled()
     })
+
+    it('rejects delays setTimeout cannot handle', () => {
+        expect(() => useWs(uri, { reconnectDelay: Infinity })).toThrow(TypeError)
+        expect(() => useWs(uri, { connectTimeout: 2 ** 31 })).toThrow(TypeError)
+        expect(() => useWs(uri, { heartbeat: { interval: 1000, timeout: Infinity } })).toThrow(
+            TypeError
+        )
+    })
+
+    it('does not reconnect when reconnectBackoff returns an invalid delay', async () => {
+        const ws = useWs(uri, { debug: false, reconnectBackoff: () => Infinity })
+        ws.connect()
+        await connected(ws)
+        dropClients()
+        await wait(100)
+        expect(connections).toBe(1)
+    })
 })

@@ -16,6 +16,9 @@ import { validateConnection, validateOptions } from './schemas.js'
 type TParsed = { ok: true; value: unknown } | { ok: false }
 type TRawData = string | ArrayBufferLike | Blob | ArrayBufferView
 
+/** Largest delay setTimeout supports */
+const MAX_DELAY = 2147483647
+
 const RAW_DATA_TAGS = [
     '[object ArrayBuffer]',
     '[object SharedArrayBuffer]',
@@ -118,6 +121,11 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
         }
         reconnectAttempt++
         const delay = reconnectBackoff ? reconnectBackoff(reconnectAttempt) : reconnectDelay
+        if (!(delay >= 0 && delay <= MAX_DELAY)) {
+            // setTimeout would fire almost immediately and hammer the server
+            log('red', `Reconnect: invalid delay ${delay}, giving up`)
+            return
+        }
         reconnectTimer = setTimeout(reconnect, delay)
     }
 

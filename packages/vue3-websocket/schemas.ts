@@ -3,6 +3,14 @@ type TCheck = (value: unknown) => boolean
 const isBoolean: TCheck = (value) => typeof value === 'boolean'
 const isString: TCheck = (value) => typeof value === 'string'
 const isNumber: TCheck = (value) => typeof value === 'number' && !Number.isNaN(value)
+/** Delays setTimeout can handle: larger values (and Infinity) fire almost immediately */
+const MAX_DELAY = 2147483647
+const isDelay: TCheck = (value) =>
+    isNumber(value) &&
+    Number.isFinite(value) &&
+    (value as number) >= 0 &&
+    (value as number) <= MAX_DELAY
+const isPositiveDelay: TCheck = (value) => isDelay(value) && (value as number) > 0
 const isFunction: TCheck = (value) => typeof value === 'function'
 const isObject: TCheck = (value) => typeof value === 'object' && value !== null
 const isNonNegativeInt: TCheck = (value) => Number.isInteger(value) && (value as number) >= 0
@@ -11,21 +19,17 @@ const isProtocols: TCheck = (value) =>
 const isHeartbeat: TCheck = (value) => {
     if (!isObject(value)) return false
     const { interval, timeout } = value as { interval?: unknown; timeout?: unknown }
-    return (
-        isNumber(interval) &&
-        (interval as number) > 0 &&
-        (timeout === undefined || isNumber(timeout))
-    )
+    return isPositiveDelay(interval) && (timeout === undefined || isPositiveDelay(timeout))
 }
 
 const optionsChecks: Record<string, [TCheck, string]> = {
     debug: [isBoolean, 'boolean'],
     reconnect: [isBoolean, 'boolean'],
-    reconnectDelay: [isNumber, 'number'],
+    reconnectDelay: [isDelay, 'delay in ms (0..2147483647)'],
     protocols: [isProtocols, 'string or string[]'],
     reconnectAttempts: [isNonNegativeInt, 'non-negative integer'],
     reconnectBackoff: [isFunction, 'function'],
-    connectTimeout: [(value) => isNumber(value) && (value as number) > 0, 'positive number'],
+    connectTimeout: [isPositiveDelay, 'delay in ms (1..2147483647)'],
     reconnectOnOnline: [isBoolean, 'boolean'],
     autoConnect: [isBoolean, 'boolean'],
     autoDisconnect: [isBoolean, 'boolean'],
