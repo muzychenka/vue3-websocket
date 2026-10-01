@@ -9,7 +9,7 @@ import type {
     ISafeParseSchema,
     IStandardSchema
 } from './types.js'
-import { eEvent, EState, type TEvent, type ICallback, type IOptions } from './types.js'
+import { eEvent, EState, EVENTS, type TEvent, type ICallback, type IOptions } from './types.js'
 import { DEFAULT_RECONNECT_DELAY, STABLE_CONNECTION_TIME } from './constants.js'
 import { validateConnection, validateOptions } from './schemas.js'
 
@@ -186,7 +186,7 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
 
     // onOpen callbacks are called by the internal open handler, so they aren't attached to sockets
     function forEachCallback(fn: (event: TEvent, callback: ICallback<any>) => void) {
-        for (const event of eEvent.options) {
+        for (const event of EVENTS) {
             event !== eEvent.enum.open &&
                 callbacks[event].forEach((callback) => fn(event, callback))
         }
@@ -257,13 +257,13 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
         }
 
         // Internal listeners go first, so user callbacks see the updated readyState
-        for (const event of eEvent.options) {
+        for (const event of EVENTS) {
             ws.addEventListener(event, internal[event])
         }
         forEachCallback((event, callback) => ws.addEventListener(event, callback))
 
         detachSocket = () => {
-            for (const event of eEvent.options) {
+            for (const event of EVENTS) {
                 ws.removeEventListener(event, internal[event])
             }
             forEachCallback((event, callback) => ws.removeEventListener(event, callback))
@@ -401,7 +401,14 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
             if (!parsed.ok) {
                 return
             }
-            const valid = validate(schema, parsed.value)
+            let valid: boolean | Promise<boolean>
+            try {
+                valid = validate(schema, parsed.value)
+            } catch (e) {
+                // e.g. zod async refinements can't run synchronously
+                console.error('[WebSocket] onMessage validator failed', e)
+                return
+            }
             if (valid === true) {
                 run(parsed.value)
             } else if (valid !== false) {

@@ -201,7 +201,9 @@ useWebSocket('ws://127.0.0.1:8000', {
 A connection that drops within 5 seconds after opening still counts as a failed attempt,
 so `reconnectAttempts` also stops endless loops when the server accepts and immediately closes the connection.
 
-On the server (SSR) `connect()` does nothing, so the composable can be safely used in universal apps.
+In environments without `WebSocket` `connect()` does nothing instead of throwing.
+Note that Node.js 22+, Deno and Bun do have a global `WebSocket`, so in SSR apps call `connect()` in `onMounted`
+(or use `autoConnect` only in client-only components) to avoid opening connections from the server.
 
 Connection options interfaces
 

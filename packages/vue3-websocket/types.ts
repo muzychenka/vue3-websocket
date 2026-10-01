@@ -1,5 +1,8 @@
 const events = ['open', 'close', 'message', 'error'] as const
 
+/** @internal */
+export const EVENTS: readonly TEvent[] = events
+
 export type TEvent = (typeof events)[number]
 
 type TEventMap = { readonly [K in TEvent]: K }

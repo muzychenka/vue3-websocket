@@ -505,3 +505,40 @@ describe('eEvent', () => {
         expect(() => eEvent.parse('nope')).toThrow()
     })
 })
+
+describe('robustness', () => {
+    it('survives a validator that throws', async () => {
+        const ws = useWs(uri, { debug: false })
+        const error = jest.spyOn(console, 'error').mockImplementation(() => {})
+        const received = jest.fn()
+
+        ws.connect()
+        await connected(ws)
+        ws.onMessage(
+            {
+                safeParse: () => {
+                    throw new Error('boom')
+                }
+            },
+            () => {}
+        )
+        ws.onMessage(z.any(), received)
+        server.send('{}')
+
+        expect(received).toHaveBeenCalledTimes(1)
+        expect(error).toHaveBeenCalled()
+        error.mockRestore()
+    })
+
+    it('is not affected by mutating eEvent.options', async () => {
+        const options = eEvent.options as string[]
+        options.push('bogus')
+        try {
+            const ws = useWs(uri, { debug: false })
+            ws.connect()
+            await connected(ws)
+        } finally {
+            options.pop()
+        }
+    })
+})
