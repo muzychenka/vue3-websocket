@@ -11,6 +11,11 @@
         "composition",
         "api"
     ],
+    "sideEffects": false,
+    "peerDependencies": {
+        "vue": "^3.2.0",
+        "zod": "^3.20.0"
+    },
     "devDependencies": {
         "@types/jest": "^29.5.12",
         "@types/node": "^20.12.8",
@@ -28,7 +33,8 @@
     },
     "scripts": {
         "build": "tsc --declaration",
-        "test": "jest test"
+        "test": "jest test && pnpm run test:types",
+        "test:types": "tsc --noEmit --strict --lib dom,ES2019 --target ES2019 --module commonjs --moduleResolution node tests/types-compat.ts"
     },
     "repository": {
         "type": "git",

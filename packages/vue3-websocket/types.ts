@@ -21,13 +21,23 @@ export interface IConnectionOptions {
     debug?: boolean
     reconnect?: boolean
     reconnectDelay?: number
-    protocols?: string[]
+    protocols?: string | string[]
+    /** Maximum number of reconnect attempts in a row. Unlimited by default */
+    reconnectAttempts?: number
+    /** Custom delay (ms) for the given reconnect attempt (starting from 1). Overrides reconnectDelay */
+    reconnectBackoff?: (attempt: number) => number
+    /** Call connect() right away */
+    autoConnect?: boolean
+    /** Call disconnect() when the current effect scope (e.g. component) is disposed */
+    autoDisconnect?: boolean
 }
 
-export interface IOptions {
+export interface IOptions extends Omit<
+    IConnectionOptions,
+    'debug' | 'reconnect' | 'reconnectDelay'
+> {
     connectionString?: string
     debug: boolean
-    protocols?: string[]
     reconnect: boolean
     reconnectDelay: number
 }
@@ -35,3 +45,5 @@ export interface IOptions {
 export interface ICallback<T = Event> {
     (this: WebSocket, ev: T): void
 }
+
+export type TSendData = string | ArrayBufferLike | Blob | ArrayBufferView | object
