@@ -77,6 +77,8 @@ export interface IConnectionOptions {
     autoDisconnect?: boolean
     /** Buffer send() calls while not connected and flush them on open. A number limits the buffer size */
     queue?: boolean | number
+    /** Give up (and reconnect) if the connection isn't open within this time (ms). Disabled by default */
+    connectTimeout?: number
     /** Send pings periodically and reconnect if the server stops responding */
     heartbeat?: IHeartbeatOptions
     /**

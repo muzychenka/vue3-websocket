@@ -163,6 +163,11 @@ const { send } = useWebSocket('ws://127.0.0.1:8000', {
 })
 ```
 
+> [!NOTE]
+> The queue guarantees that messages are handed to the socket in order, not that the server received them:
+> WebSocket has no delivery acknowledgements, so messages written to a connection that dies right after can be lost.
+> Use application-level acks if every message must arrive.
+
 Heartbeat: pings the server periodically and reconnects if nothing comes back within `timeout`
 (any incoming message counts as a response)
 
@@ -173,6 +178,20 @@ useWebSocket('ws://127.0.0.1:8000', {
         timeout: 10000, // default: interval
         message: () => ({ type: 'ping' }) // default: 'ping'
     }
+})
+```
+
+> [!TIP]
+> `timeout` must be longer than the network round trip **and** than the time it takes to receive your largest message:
+> the browser reports a message only once it has fully arrived, so a pong queued behind a long download comes late.
+> A too short `timeout` makes the connection reconnect over and over on slow networks.
+
+A connection can also hang before opening (e.g. a proxy accepts TCP but never answers the handshake).
+Browsers may wait minutes in that state, so set `connectTimeout` to give up and reconnect:
+
+```ts
+useWebSocket('ws://127.0.0.1:8000', {
+    connectTimeout: 10000 // close with code 4008 and reconnect if not open within 10 s
 })
 ```
 
@@ -222,6 +241,7 @@ interface IConnectionOptions {
     protocols?: string | string[]
     reconnectAttempts?: number // default: unlimited
     reconnectBackoff?: (attempt: number) => number // overrides reconnectDelay
+    connectTimeout?: number // default: disabled
     autoConnect?: boolean // default: false
     autoDisconnect?: boolean // default: false
     reconnectOnOnline?: boolean // default: false

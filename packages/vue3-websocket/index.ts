@@ -70,6 +70,7 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
     let openedAt: number | undefined
     let heartbeatTimer: ReturnType<typeof setInterval> | undefined
     let pongTimer: ReturnType<typeof setTimeout> | undefined
+    let connectTimer: ReturnType<typeof setTimeout> | undefined
     let listeningOnline = false
     let detachSocket: (() => void) | undefined
 
@@ -123,7 +124,8 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
     function stopHeartbeat() {
         clearInterval(heartbeatTimer)
         clearTimeout(pongTimer)
-        heartbeatTimer = pongTimer = undefined
+        clearTimeout(connectTimer)
+        heartbeatTimer = pongTimer = connectTimer = undefined
     }
 
     function startHeartbeat(ws: WebSocket, heartbeat: IHeartbeatOptions) {
@@ -134,19 +136,19 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
             const payload = serialize(typeof message === 'function' ? message() : message)
             payload !== undefined && ws.send(payload)
             if (pongTimer === undefined) {
-                pongTimer = setTimeout(() => dropDeadSocket(ws), timeout)
+                pongTimer = setTimeout(() => dropDeadSocket(ws, 4000, 'Heartbeat timeout'), timeout)
             }
         }, heartbeat.interval)
     }
 
-    // A dead connection may take a minute to fire 'close', so don't wait for it
-    function dropDeadSocket(ws: WebSocket) {
-        log('red', 'Heartbeat: no response, reconnecting')
+    // A dead connection may take minutes to fire 'close' (or never leave CONNECTING), so don't wait for it
+    function dropDeadSocket(ws: WebSocket, code: number, reason: string) {
+        log('red', `${reason}, reconnecting`)
         const event =
             typeof CloseEvent === 'function'
-                ? new CloseEvent('close', { code: 4000, reason: 'Heartbeat timeout' })
+                ? new CloseEvent('close', { code, reason })
                 : new Event('close')
-        releaseSocket(4000, 'Heartbeat timeout')
+        releaseSocket(code, reason)
         handleClose(event)
         runCallbacks(ws, eEvent.enum.close, event)
     }
@@ -234,8 +236,17 @@ export function useWebSocket(arg1: IConnection | string, arg2?: IConnectionOptio
         socket.value = ws
         readyState.value = EState.CONNECTING
 
+        if (options.connectTimeout) {
+            connectTimer = setTimeout(
+                () => dropDeadSocket(ws, 4008, 'Connect timeout'),
+                options.connectTimeout
+            )
+        }
+
         const internal: { [K in TEvent]: (event: any) => void } = {
             open(event: Event) {
+                clearTimeout(connectTimer)
+                connectTimer = undefined
                 openedAt = Date.now()
                 readyState.value = EState.OPEN
                 log('green', 'Connection: opened')

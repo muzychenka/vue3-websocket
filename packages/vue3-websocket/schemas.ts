@@ -25,6 +25,7 @@ const optionsChecks: Record<string, [TCheck, string]> = {
     protocols: [isProtocols, 'string or string[]'],
     reconnectAttempts: [isNonNegativeInt, 'non-negative integer'],
     reconnectBackoff: [isFunction, 'function'],
+    connectTimeout: [(value) => isNumber(value) && (value as number) > 0, 'positive number'],
     reconnectOnOnline: [isBoolean, 'boolean'],
     autoConnect: [isBoolean, 'boolean'],
     autoDisconnect: [isBoolean, 'boolean'],

@@ -541,4 +541,28 @@ describe('robustness', () => {
             options.pop()
         }
     })
+
+    it('gives up a connection stuck in CONNECTING after connectTimeout', async () => {
+        const ws = useWs(uri, { debug: false, reconnect: false, connectTimeout: 30 })
+        const closed = jest.fn()
+        ws.onClose((event) => closed(event.code))
+        ws.connect()
+        // simulate a handshake that never completes
+        ws.socket.value!.removeEventListener('open', (ws.socket.value as any).listeners.open[0])
+        Object.defineProperty(ws.socket.value!, 'readyState', { value: 0, configurable: true })
+        await waitFor(() => closed.mock.calls.length > 0)
+
+        expect(closed.mock.calls).toEqual([[4008]])
+        expect(ws.readyState.value).toBe(EState.CLOSED)
+    })
+
+    it('clears connectTimeout once open', async () => {
+        const ws = useWs(uri, { debug: false, connectTimeout: 30 })
+        const closed = jest.fn()
+        ws.onClose(closed)
+        ws.connect()
+        await connected(ws)
+        await wait(60)
+        expect(closed).not.toHaveBeenCalled()
+    })
 })
